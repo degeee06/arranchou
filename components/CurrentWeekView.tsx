@@ -7,6 +7,7 @@ import Summary from './Summary';
 import { SearchIcon } from './icons';
 import Modal from './Modal';
 import { supabase } from '../supabase';
+import AddPersonForm from './AddPersonForm';
 
 interface CurrentWeekViewProps {
   profiles: Profile[];
@@ -14,9 +15,10 @@ interface CurrentWeekViewProps {
   setAttendanceRecords: React.Dispatch<React.SetStateAction<AttendanceRecord[]>>;
   currentWeekId: string;
   isAdmin: boolean;
+  onAddPerson: (name: string, email: string, password: string, selectedDays: DayKey[]) => Promise<void>;
 }
 
-const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance, setAttendanceRecords, currentWeekId, isAdmin }) => {
+const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance, setAttendanceRecords, currentWeekId, isAdmin, onAddPerson }) => {
   const jsTodayIndex = new Date().getDay(); // 0 for Sunday, 1 for Monday...
   const todayIndex = jsTodayIndex === 0 ? 6 : jsTodayIndex - 1; // Monday is 0, Sunday is 6
   
@@ -164,6 +166,7 @@ const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance,
           </section>
         </div>
         <aside className="flex flex-col gap-6">
+          {isAdmin && <AddPersonForm onAddPerson={onAddPerson} />}
           <Summary people={profiles} attendance={attendance} currentDay={currentDay} />
         </aside>
       </div>
