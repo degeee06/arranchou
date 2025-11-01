@@ -39,6 +39,15 @@ function App() {
         .select('*')
         .eq('id', currentSession.user.id)
         .single();
+
+      if (profileError && profileError.code === 'PGRST116') {
+        // PGRST116: "The result contains 0 rows" -> Profile not found
+        console.error("Profile not found for user. Logging out.");
+        alert("Seu perfil não foi encontrado. Por favor, contate o administrador. Você será desconectado.");
+        await supabase.auth.signOut();
+        setLoading(false);
+        return;
+      }
       if (profileError) throw profileError;
       setProfile(userProfile);
 
@@ -61,7 +70,7 @@ function App() {
 
     } catch (error) {
       console.error('Error fetching data:', error);
-      alert('Falha ao carregar os dados.');
+      alert('Falha ao carregar os dados. Verifique as políticas de segurança (RLS) no seu painel do Supabase.');
     } finally {
       setLoading(false);
     }
@@ -80,13 +89,15 @@ function App() {
 
     const { data: authListener } = supabase.auth.onAuthStateChange(
       (_event, session) => {
+        const isInitialLoad = !profile;
+        if (!session) {
+            setProfile(null);
+            setProfiles([]);
+            setAttendanceRecords([]);
+        }
         setSession(session);
-        if (session) {
+        if (session && isInitialLoad) {
           fetchData(session);
-        } else {
-          setProfile(null);
-          setProfiles([]);
-          setAttendanceRecords([]);
         }
       }
     );
@@ -94,7 +105,7 @@ function App() {
     return () => {
       authListener.subscription.unsubscribe();
     };
-  }, [fetchData]);
+  }, [fetchData, profile]);
 
   const handleLogout = async () => {
     const { error } = await supabase.auth.signOut();
@@ -118,15 +129,17 @@ function App() {
     });
 
     if (signUpError) {
-        alert(`Erro ao criar usuário: ${signUpError.message}`);
-        // Restaura a sessão do admin em caso de falha.
-        await supabase.auth.setSession(adminSession);
+        if (signUpError.message.includes("User already registered")) {
+            alert(`Erro: O email "${email}" já está cadastrado no sistema.`);
+        } else {
+            alert(`Erro ao criar usuário: ${signUpError.message}`);
+        }
+        await supabase.auth.setSession(adminSession); // Restaura a sessão do admin em caso de falha.
         return;
     }
 
     if (signUpData.user) {
         // O trigger já criou um perfil. Agora atualizamos com os dias corretos.
-        // Esta atualização usa a sessão do usuário recém-criado para autorização.
         const { error: updateError } = await supabase
             .from('profiles')
             .update({ default_days: selectedDays })
@@ -208,6 +221,7 @@ function App() {
             {view === 'current' && (
               <CurrentWeekView
                 profiles={profiles}
+                setProfiles={setProfiles}
                 attendance={attendance}
                 setAttendanceRecords={setAttendanceRecords}
                 currentWeekId={currentWeekId}
