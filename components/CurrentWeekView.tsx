@@ -71,6 +71,12 @@ const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance,
   const [isSearchVisible, setIsSearchVisible] = useState(false);
 
   const handleToggleAttendance = async (personId: string, day: DayKey) => {
+    const dayIndex = DAYS_OF_WEEK.indexOf(day);
+    if (dayIndex < todayIndex) {
+        alert("Não é possível alterar o status de dias que já passaram.");
+        return;
+    }
+      
     const isPresent = !!attendance[personId]?.[day];
     const newStatus = !isPresent;
 
