@@ -24,9 +24,20 @@ const EmployeeWeekView: React.FC<EmployeeWeekViewProps> = ({ profile, attendance
 
         const currentStatus = attendance[profile.id]?.[day];
 
-        // Cycle: undefined -> true -> undefined. An employee can no longer mark themselves as absent (false).
-        if (currentStatus === undefined) {
-            // Mark as present
+        // The employee can only toggle between 'present' (true) and 'not marked' (undefined).
+        // They cannot set their status to 'absent' (false).
+        // If the current status is 'present', it will be changed to 'not marked'.
+        // If the current status is 'not marked' or 'absent', it will be changed to 'present'.
+        if (currentStatus === true) {
+            // From present to not marked (delete the record)
+            const { error } = await supabase.from('attendances').delete().match({ user_id: profile.id, week_id: currentWeekId, day });
+            if (error) {
+                alert("Erro ao atualizar presença.");
+                return;
+            }
+            setAttendanceRecords(prev => prev.filter(r => !(r.user_id === profile.id && r.week_id === currentWeekId && r.day === day)));
+        } else {
+            // From not marked (undefined) or absent (false) to present
             const { error } = await supabase.from('attendances').upsert(
                 { user_id: profile.id, week_id: currentWeekId, day, is_present: true },
                 { onConflict: 'user_id,week_id,day' }
@@ -36,14 +47,6 @@ const EmployeeWeekView: React.FC<EmployeeWeekViewProps> = ({ profile, attendance
                 return;
             }
             setAttendanceRecords(prev => [...prev.filter(r => !(r.user_id === profile.id && r.week_id === currentWeekId && r.day === day)), { user_id: profile.id, week_id: currentWeekId, day, is_present: true }]);
-        } else {
-            // If it's already marked as present, unmark it by deleting the record.
-            const { error } = await supabase.from('attendances').delete().match({ user_id: profile.id, week_id: currentWeekId, day });
-            if (error) {
-                alert("Erro ao atualizar presença.");
-                return;
-            }
-            setAttendanceRecords(prev => prev.filter(r => !(r.user_id === profile.id && r.week_id === currentWeekId && r.day === day)));
         }
     };
 
