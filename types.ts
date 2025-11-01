@@ -6,7 +6,6 @@ export interface Profile {
   full_name: string;
   employee_id: string;
   role: 'admin' | 'employee';
-  default_days: DayKey[];
 }
 
 export interface AttendanceRecord {

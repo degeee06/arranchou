@@ -6,7 +6,6 @@ import AuthView from './components/AuthView';
 import Header from './components/Header';
 import CurrentWeekView from './components/CurrentWeekView';
 import HistoryView from './components/HistoryView';
-import AddPersonForm from './components/AddPersonForm';
 import EmployeeWeekView from './components/EmployeeWeekView';
 import { CalendarIcon, HistoryIcon, UserPlusIcon } from './components/icons';
 
@@ -35,6 +34,7 @@ function App() {
 
   const fetchData = useCallback(async (currentSession: Session) => {
     try {
+      setLoading(true);
       const { data: userProfile, error: profileError } = await supabase
         .from('profiles')
         .select('*')
@@ -68,6 +68,153 @@ function App() {
     }
   }, []);
 
+  // Auth listener
   useEffect(() => {
-    setLoading(true);
-    supabase.auth.getSession
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      if (session) {
+        fetchData(session);
+      } else {
+        setLoading(false);
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      if (session) {
+        fetchData(session);
+      } else {
+        setProfile(null);
+        setProfiles([]);
+        setAttendanceRecords([]);
+        setLoading(false);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [fetchData]);
+
+  // Realtime listener for new profiles (for admin)
+  useEffect(() => {
+    if (profile?.role !== 'admin') return;
+
+    const channel = supabase
+      .channel('profiles-changes')
+      .on<Profile>(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'profiles' },
+        (payload) => {
+          setProfiles((currentProfiles) => 
+            [...currentProfiles, payload.new]
+            .sort((a, b) => a.full_name.localeCompare(b.full_name))
+          );
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [profile]);
+
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+  };
+  
+  const handleProfileRemoved = (profileId: string) => {
+      setProfiles(prev => prev.filter(p => p.id !== profileId));
+  };
+
+
+  // Transform attendance records into a more usable format
+  const attendanceData: Attendance = useMemo(() => {
+    return attendanceRecords.reduce<Attendance>((acc, record) => {
+      if (!acc[record.user_id]) {
+        acc[record.user_id] = {};
+      }
+      acc[record.user_id][record.day] = record.is_present;
+      return acc;
+    }, {});
+  }, [attendanceRecords]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-900 flex justify-center items-center">
+        <div className="animate-spin rounded-full h-32 w-32 border-t-2 border-b-2 border-brand-primary"></div>
+      </div>
+    );
+  }
+
+  if (!session || !profile) {
+    return <AuthView />;
+  }
+
+  const isAdmin = profile.role === 'admin';
+
+  return (
+    <div className="container mx-auto px-4 py-8 max-w-7xl">
+      <Header session={session} profile={profile} onLogout={handleLogout} />
+      <main>
+        {isAdmin ? (
+          <>
+            <nav className="mb-6 flex justify-center border-b border-gray-700">
+              <button
+                onClick={() => setView('current')}
+                className={`px-4 py-2 font-semibold transition-colors ${view === 'current' ? 'text-brand-primary border-b-2 border-brand-primary' : 'text-gray-400'}`}
+              >
+                <span className="flex items-center gap-2"><CalendarIcon /> Semana Atual</span>
+              </button>
+              <button
+                onClick={() => setView('history')}
+                className={`px-4 py-2 font-semibold transition-colors ${view === 'history' ? 'text-brand-primary border-b-2 border-brand-primary' : 'text-gray-400'}`}
+              >
+                 <span className="flex items-center gap-2"><HistoryIcon /> Histórico</span>
+              </button>
+              <button
+                onClick={() => setView('admin')}
+                className={`px-4 py-2 font-semibold transition-colors ${view === 'admin' ? 'text-brand-primary border-b-2 border-brand-primary' : 'text-gray-400'}`}
+              >
+                 <span className="flex items-center gap-2"><UserPlusIcon /> Adicionar Pessoa</span>
+              </button>
+            </nav>
+            {view === 'current' && (
+              <CurrentWeekView
+                profiles={profiles}
+                attendance={attendanceData}
+                setAttendanceRecords={setAttendanceRecords}
+                currentWeekId={currentWeekId}
+                isAdmin={isAdmin}
+                onProfileRemoved={handleProfileRemoved}
+              />
+            )}
+            {view === 'history' && <HistoryView allProfiles={profiles} allAttendances={attendanceRecords} />}
+            {view === 'admin' && (
+              <div className="bg-gray-800 rounded-lg shadow p-6 max-w-2xl mx-auto">
+                <h3 className="font-bold text-lg mb-3 text-gray-200">Como Adicionar Novas Pessoas</h3>
+                <p className="text-gray-400">
+                    Com a nova atualização, os funcionários agora podem se cadastrar sozinhos!
+                </p>
+                <p className="text-gray-400 mt-2">
+                    Para adicionar uma nova pessoa, instrua-a a acessar o aplicativo e usar a opção <strong>"Cadastrar"</strong> na tela de login, informando o nome completo, o número do crachá/matrícula e criando uma senha.
+                </p>
+                <p className="text-gray-400 mt-4">
+                    Assim que o cadastro for concluído, o novo funcionário aparecerá automaticamente na lista da semana atual.
+                </p>
+              </div>
+            )}
+          </>
+        ) : (
+          <EmployeeWeekView 
+            profile={profile}
+            attendance={attendanceData}
+            setAttendanceRecords={setAttendanceRecords}
+            currentWeekId={currentWeekId}
+          />
+        )}
+      </main>
+    </div>
+  );
+}
+
+export default App;
