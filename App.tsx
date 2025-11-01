@@ -135,7 +135,11 @@ function App() {
 
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    const { error } = await supabase.auth.signOut({ scope: 'local' });
+    if (error) {
+      console.error("Error signing out:", error);
+      alert("Ocorreu um erro ao sair. Por favor, tente novamente.");
+    }
   };
   
   // Transform attendance records into a more usable format
