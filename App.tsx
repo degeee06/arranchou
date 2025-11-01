@@ -43,13 +43,12 @@ function App() {
         .single();
       if (profileError) throw profileError;
 
-      // Trust the session's metadata as the authoritative source of truth for the role
-      const userRole = currentSession.user.user_metadata.role || 'employee';
-      const authoritativeProfile: Profile = { ...userProfileData, role: userRole };
-      setProfile(authoritativeProfile);
+      // The userProfileData fetched directly from the database IS the source of truth.
+      // No need to check session metadata which can be stale.
+      setProfile(userProfileData);
 
 
-      if (authoritativeProfile.role === 'admin') {
+      if (userProfileData.role === 'admin') {
         const { data: allProfiles, error: profilesError } = await supabase
           .from('profiles')
           .select('*')
@@ -57,7 +56,7 @@ function App() {
         if (profilesError) throw profilesError;
         setProfiles(allProfiles);
       } else {
-        setProfiles([authoritativeProfile]);
+        setProfiles([userProfileData]);
       }
 
       const { data: allAttendances, error: attendancesError } = await supabase
