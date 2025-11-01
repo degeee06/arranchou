@@ -48,7 +48,7 @@ function App() {
       setProfile(userProfileData);
 
 
-      if (userProfileData.role === 'admin') {
+      if (userProfileData.role === 'admin' || userProfileData.role === 'super_admin') {
         const { data: allProfiles, error: profilesError } = await supabase
           .from('profiles')
           .select('*')
@@ -101,7 +101,7 @@ function App() {
 
   // Realtime listener for profile changes (for admin)
   useEffect(() => {
-    if (profile?.role !== 'admin') return;
+    if (profile?.role !== 'admin' && profile?.role !== 'super_admin') return;
 
     const channel = supabase
       .channel('profiles-changes')
@@ -161,7 +161,7 @@ function App() {
     return <AuthView />;
   }
   
-  const isAdmin = profile.role === 'admin';
+  const isAdmin = profile.role === 'admin' || profile.role === 'super_admin';
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-7xl">
@@ -204,7 +204,7 @@ function App() {
               <ManageUsersView
                 profiles={profiles}
                 setProfiles={setProfiles}
-                currentUserId={session.user.id}
+                currentUserProfile={profile}
               />
             )}
           </>

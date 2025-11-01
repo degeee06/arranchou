@@ -5,7 +5,7 @@ export interface Profile {
   updated_at?: string;
   full_name: string;
   employee_id: string;
-  role: 'admin' | 'employee';
+  role: 'super_admin' | 'admin' | 'employee';
 }
 
 export interface AttendanceRecord {
