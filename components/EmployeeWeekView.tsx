@@ -74,13 +74,13 @@ const EmployeeWeekView: React.FC<EmployeeWeekViewProps> = ({ profile, attendance
                                         <button
                                             onClick={() => handleToggleAttendance(day)}
                                             disabled={isPast}
-                                            className={`p-2 rounded-full transition-colors duration-200 ${
+                                            className={`p-2 rounded-full transition-all duration-200 transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-70 ${
                                                 status === true
-                                                ? 'bg-green-900 text-green-300'
+                                                ? 'bg-green-900 text-green-300 hover:bg-green-800'
                                                 : status === false
-                                                ? 'bg-red-900 text-red-300'
+                                                ? 'bg-red-900 text-red-300 hover:bg-red-800'
                                                 : 'bg-gray-600 text-gray-400 hover:bg-gray-500'
-                                            } ${isPast ? 'cursor-not-allowed' : ''}`}
+                                            }`}
                                             aria-label={`Marcar presença para ${day}`}
                                         >
                                             {status === true ? <CheckIcon /> : status === false ? <XIcon /> : <span className="h-5 w-5 flex items-center justify-center font-bold">-</span>}

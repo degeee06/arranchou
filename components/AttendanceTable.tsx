@@ -53,11 +53,11 @@ const AttendanceTable: React.FC<AttendanceTableProps> = ({ people, attendance, c
                 <td className="px-2 sm:px-6 py-4 whitespace-nowrap text-center">
                     <button
                     onClick={() => onToggleAttendance(person.id, currentDay)}
-                    className={`p-2 rounded-full transition-colors duration-200 ${
+                    className={`p-2 rounded-full transition-all duration-200 transform hover:scale-110 active:scale-95 ${
                         status === true
-                        ? 'bg-green-900 text-green-300'
+                        ? 'bg-green-900 hover:bg-green-800 text-green-300'
                         : status === false
-                        ? 'bg-red-900 text-red-300'
+                        ? 'bg-red-900 hover:bg-red-800 text-red-300'
                         : 'bg-gray-600 text-gray-400 hover:bg-gray-500'
                     }`}
                     aria-label={`Marcar presença para ${person.full_name}`}
