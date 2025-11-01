@@ -1,6 +1,6 @@
 import React from 'react';
 import { Profile, Attendance, DayKey } from '../types';
-import { CheckIcon, XIcon, UserPlusIcon, TrashIcon } from './icons';
+import { CheckIcon, XIcon, UserPlusIcon } from './icons';
 
 interface AttendanceTableProps {
   people: Profile[];
@@ -9,10 +9,9 @@ interface AttendanceTableProps {
   isAdmin: boolean;
   onToggleAttendance: (personId: string, day: DayKey) => void;
   onSubstitute: (person: Profile) => void;
-  onRemovePerson: (person: Profile) => void;
 }
 
-const AttendanceTable: React.FC<AttendanceTableProps> = ({ people, attendance, currentDay, isAdmin, onToggleAttendance, onSubstitute, onRemovePerson }) => {
+const AttendanceTable: React.FC<AttendanceTableProps> = ({ people, attendance, currentDay, isAdmin, onToggleAttendance, onSubstitute }) => {
   // Para administradores, mostramos todas as pessoas para dar controle total.
   const peopleForCurrentDay = people;
 
@@ -67,20 +66,13 @@ const AttendanceTable: React.FC<AttendanceTableProps> = ({ people, attendance, c
                     </button>
                 </td>
                 {isAdmin && (
-                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium flex justify-end items-center gap-2">
+                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <button
                       onClick={() => onSubstitute(person)}
                       className="text-blue-400 hover:text-blue-300 p-2 rounded-full hover:bg-gray-600"
                       aria-label={`Substituir ${person.full_name}`}
                       >
                       <UserPlusIcon />
-                      </button>
-                      <button
-                        onClick={() => onRemovePerson(person)}
-                        className="text-red-400 hover:text-red-300 p-2 rounded-full hover:bg-gray-600"
-                        aria-label={`Remover ${person.full_name}`}
-                      >
-                        <TrashIcon />
                       </button>
                   </td>
                 )}

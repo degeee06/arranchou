@@ -7,7 +7,8 @@ import Header from './components/Header';
 import CurrentWeekView from './components/CurrentWeekView';
 import HistoryView from './components/HistoryView';
 import EmployeeWeekView from './components/EmployeeWeekView';
-import { CalendarIcon, HistoryIcon, UserPlusIcon } from './components/icons';
+import ManageUsersView from './components/ManageUsersView';
+import { CalendarIcon, HistoryIcon, UsersIcon } from './components/icons';
 
 // Function to get ISO week number (e.g., 2024-W42)
 export const getWeekId = (date: Date): string => {
@@ -30,7 +31,7 @@ function App() {
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentWeekId] = useState<string>(getWeekId(new Date()));
-  const [view, setView] = useState<'current' | 'history' | 'admin'>('current');
+  const [view, setView] = useState<'current' | 'history' | 'manage_users'>('current');
 
   const fetchData = useCallback(async (currentSession: Session) => {
     try {
@@ -122,11 +123,6 @@ function App() {
     await supabase.auth.signOut();
   };
   
-  const handleProfileRemoved = (profileId: string) => {
-      setProfiles(prev => prev.filter(p => p.id !== profileId));
-  };
-
-
   // Transform attendance records into a more usable format
   const attendanceData: Attendance = useMemo(() => {
     return attendanceRecords.reduce<Attendance>((acc, record) => {
@@ -172,10 +168,10 @@ function App() {
                  <span className="flex items-center gap-2"><HistoryIcon /> Histórico</span>
               </button>
               <button
-                onClick={() => setView('admin')}
-                className={`px-4 py-2 font-semibold transition-colors ${view === 'admin' ? 'text-brand-primary border-b-2 border-brand-primary' : 'text-gray-400'}`}
+                onClick={() => setView('manage_users')}
+                className={`px-4 py-2 font-semibold transition-colors ${view === 'manage_users' ? 'text-brand-primary border-b-2 border-brand-primary' : 'text-gray-400'}`}
               >
-                 <span className="flex items-center gap-2"><UserPlusIcon /> Adicionar Pessoa</span>
+                 <span className="flex items-center gap-2"><UsersIcon /> Gerenciar Usuários</span>
               </button>
             </nav>
             {view === 'current' && (
@@ -185,23 +181,15 @@ function App() {
                 setAttendanceRecords={setAttendanceRecords}
                 currentWeekId={currentWeekId}
                 isAdmin={isAdmin}
-                onProfileRemoved={handleProfileRemoved}
               />
             )}
             {view === 'history' && <HistoryView allProfiles={profiles} allAttendances={attendanceRecords} />}
-            {view === 'admin' && (
-              <div className="bg-gray-800 rounded-lg shadow p-6 max-w-2xl mx-auto">
-                <h3 className="font-bold text-lg mb-3 text-gray-200">Como Adicionar Novas Pessoas</h3>
-                <p className="text-gray-400">
-                    Com a nova atualização, os funcionários agora podem se cadastrar sozinhos!
-                </p>
-                <p className="text-gray-400 mt-2">
-                    Para adicionar uma nova pessoa, instrua-a a acessar o aplicativo e usar a opção <strong>"Cadastrar"</strong> na tela de login, informando o nome completo, o número do crachá/matrícula e criando uma senha.
-                </p>
-                <p className="text-gray-400 mt-4">
-                    Assim que o cadastro for concluído, o novo funcionário aparecerá automaticamente na lista da semana atual.
-                </p>
-              </div>
+            {view === 'manage_users' && (
+              <ManageUsersView
+                profiles={profiles}
+                setProfiles={setProfiles}
+                currentUserId={session.user.id}
+              />
             )}
           </>
         ) : (
