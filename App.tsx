@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Session } from '@supabase/supabase-js';
-import { supabase, isSupabaseConfigured } from './supabase';
+import { supabase } from './supabase';
 import { Profile, AttendanceRecord, Attendance } from './types';
 import Header from './components/Header';
 import CurrentWeekView from './components/CurrentWeekView';
@@ -95,18 +95,6 @@ const App: React.FC = () => {
   const handleLogout = async () => {
     await supabase.auth.signOut();
   };
-
-  if (!isSupabaseConfigured) {
-      return (
-          <div className="bg-gray-900 min-h-screen flex items-center justify-center text-center p-4">
-              <div className="bg-yellow-900 border border-yellow-500 text-yellow-200 px-4 py-3 rounded-lg">
-                  <h2 className="font-bold text-lg mb-2">Configuração Incompleta</h2>
-                  <p>As credenciais do Supabase não foram definidas.</p>
-                  <p>Por favor, abra o arquivo <strong>supabase.ts</strong> e adicione sua URL e Chave Anon do projeto.</p>
-              </div>
-          </div>
-      );
-  }
 
   if (loading) {
     return (
