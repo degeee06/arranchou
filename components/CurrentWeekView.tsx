@@ -14,9 +14,10 @@ interface CurrentWeekViewProps {
   setAttendanceRecords: React.Dispatch<React.SetStateAction<AttendanceRecord[]>>;
   currentWeekId: string;
   isAdmin: boolean;
+  onProfileRemoved: (profileId: string) => void;
 }
 
-const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance, setAttendanceRecords, currentWeekId, isAdmin }) => {
+const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance, setAttendanceRecords, currentWeekId, isAdmin, onProfileRemoved }) => {
   const jsTodayIndex = new Date().getDay(); // 0 for Sunday, 1 for Monday...
   const todayIndex = jsTodayIndex === 0 ? 6 : jsTodayIndex - 1; // Monday is 0, Sunday is 6
   
@@ -97,8 +98,7 @@ const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance,
   const proceedWithRemovePerson = async () => {
     if (!removePersonConfirm.person) return;
 
-    // This is a sensitive operation, ideally done via an admin interface
-    // For now, we delete from profiles table, Supabase cascade will handle the rest
+    // Apenas deleta da tabela de perfis. A conta de autenticação permanece.
     const { error } = await supabase
       .from('profiles')
       .delete()
@@ -108,8 +108,7 @@ const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance,
         alert("Erro ao remover pessoa. Verifique o console para detalhes.");
         console.error("Remove person error:", error);
     } else {
-        alert("Pessoa removida. A remoção da conta de autenticação deve ser feita no painel do Supabase.");
-        // Refetch data from parent is needed here, or manually update state
+        onProfileRemoved(removePersonConfirm.person!.id);
     }
     
     setRemovePersonConfirm({ isOpen: false, person: null });
@@ -200,7 +199,7 @@ const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance,
                 Tem certeza que deseja remover <strong>{removePersonConfirm.person?.full_name}</strong>?
             </p>
             <p className="text-sm text-gray-400 mt-2">
-                Esta ação removerá o perfil da pessoa. A conta de usuário associada deverá ser removida manualmente no painel do Supabase.
+                Esta ação removerá o perfil da pessoa do sistema de arranchamento. A conta de usuário associada não será afetada.
             </p>
             <div className="mt-6 flex justify-end gap-3">
                 <button onClick={() => setRemovePersonConfirm({ isOpen: false, person: null })} type="button" className="px-4 py-2 text-sm font-medium text-gray-200 bg-gray-600 border border-gray-500 rounded-md shadow-sm hover:bg-gray-700">

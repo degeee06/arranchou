@@ -106,6 +106,10 @@ function App() {
     alert("Funcionalidade para adicionar nova pessoa não está implementada. O usuário deve se cadastrar no sistema primeiro.");
   };
 
+  const handleProfileRemoved = (profileId: string) => {
+    setProfiles(prevProfiles => prevProfiles.filter(p => p.id !== profileId));
+  };
+
   const attendance: Attendance = useMemo(() => {
     return attendanceRecords.reduce((acc, record) => {
       if (!acc[record.user_id]) {
@@ -169,6 +173,7 @@ function App() {
                 setAttendanceRecords={setAttendanceRecords}
                 currentWeekId={currentWeekId}
                 isAdmin={true}
+                onProfileRemoved={handleProfileRemoved}
               />
             )}
             {view === 'history' && <HistoryView allProfiles={profiles} allAttendances={attendanceRecords} />}

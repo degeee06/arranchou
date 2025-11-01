@@ -13,14 +13,14 @@ interface AttendanceTableProps {
 }
 
 const AttendanceTable: React.FC<AttendanceTableProps> = ({ people, attendance, currentDay, isAdmin, onToggleAttendance, onSubstitute, onRemovePerson }) => {
-  // Filtra as pessoas para exibir apenas quem está agendado para o dia corrente.
-  const peopleForCurrentDay = people.filter(person => person.default_days.includes(currentDay));
+  // Para administradores, mostramos todas as pessoas para dar controle total.
+  const peopleForCurrentDay = people;
 
   if (peopleForCurrentDay.length === 0) {
     return (
       <div className="text-center py-10 px-4 bg-gray-800 rounded-lg">
-        <p className="text-gray-400">Nenhuma pessoa agendada para {currentDay}.</p>
-        <p className="text-gray-400 mt-2">Selecione outro dia ou aguarde os cadastros para este dia.</p>
+        <p className="text-gray-400">Nenhuma pessoa encontrada.</p>
+        <p className="text-gray-400 mt-2">Verifique a pesquisa ou adicione novas pessoas ao sistema.</p>
       </div>
     );
   }
