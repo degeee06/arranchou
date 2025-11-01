@@ -118,6 +118,11 @@ function App() {
                 setProfiles((currentProfiles) =>
                     currentProfiles.map(p => p.id === payload.new.id ? payload.new : p)
                 );
+            } else if (payload.eventType === 'DELETE') {
+                const deletedProfileId = (payload.old as { id: string }).id;
+                setProfiles((currentProfiles) =>
+                    currentProfiles.filter(p => p.id !== deletedProfileId)
+                );
             }
         }
       )

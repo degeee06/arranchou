@@ -16,21 +16,31 @@ const ManageUsersView: React.FC<ManageUsersViewProps> = ({ profiles, setProfiles
   const [removeConfirm, setRemoveConfirm] = useState<Profile | null>(null);
 
   const handleRoleChange = async (person: Profile) => {
-    const newRole = person.role === 'admin' ? 'employee' : 'admin';
+    const originalRole = person.role;
+    const newRole = originalRole === 'admin' ? 'employee' : 'admin';
+    
     setLoading(prev => ({ ...prev, [person.id]: true }));
     setError(null);
-    
-    // Call the Supabase Edge Function to securely update the user's role
+
+    // Optimistically update the UI for an instant response
+    setProfiles(prevProfiles =>
+      prevProfiles.map(p => (p.id === person.id ? { ...p, role: newRole } : p))
+    );
+
+    // Call the Supabase Edge Function to persist the change
     const { error } = await supabase.functions.invoke('update-user-role', {
-        body: { user_id: person.id, new_role: newRole },
+      body: { user_id: person.id, new_role: newRole },
     });
 
     if (error) {
       console.error('Error changing role:', error);
-      setError('Falha ao alterar o cargo. Verifique se a Função Edge "update-user-role" está configurada.');
-    } else {
-      // The realtime listener in App.tsx will handle the state update
+      setError('Falha ao alterar o cargo. A alteração foi revertida.');
+      // Revert the change in the UI if the API call fails
+      setProfiles(prevProfiles =>
+        prevProfiles.map(p => (p.id === person.id ? { ...p, role: originalRole } : p))
+      );
     }
+
     setLoading(prev => ({ ...prev, [person.id]: false }));
   };
   
