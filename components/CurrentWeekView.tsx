@@ -4,7 +4,7 @@ import { DAYS_OF_WEEK } from '../constants';
 import DaySelector from './DaySelector';
 import AttendanceTable from './AttendanceTable';
 import Summary from './Summary';
-import { SearchIcon } from './icons';
+import { SearchIcon, CheckIcon, XIcon } from './icons';
 import Modal from './Modal';
 import { supabase } from '../supabase';
 
@@ -14,15 +14,56 @@ interface CurrentWeekViewProps {
   setAttendanceRecords: React.Dispatch<React.SetStateAction<AttendanceRecord[]>>;
   currentWeekId: string;
   isAdmin: boolean;
+  adminProfile: Profile; // The profile of the logged-in admin
 }
 
-const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance, setAttendanceRecords, currentWeekId, isAdmin }) => {
+const AdminPersonalAttendance: React.FC<{
+  profile: Profile;
+  attendance: Attendance;
+  onToggle: (day: DayKey) => void;
+}> = ({ profile, attendance, onToggle }) => {
+    const jsTodayIndex = new Date().getDay();
+    const todayIndex = jsTodayIndex === 0 ? 6 : jsTodayIndex - 1;
+
+    return (
+        <section className="bg-gray-800 rounded-lg shadow p-4 sm:p-6 mb-6">
+            <h2 className="text-xl font-bold mb-4 text-gray-200">Minha Presença</h2>
+            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-3">
+                {DAYS_OF_WEEK.map((day) => {
+                    const dayIndex = DAYS_OF_WEEK.indexOf(day);
+                    const isPast = dayIndex < todayIndex;
+                    const status = attendance[profile.id]?.[day];
+                    return (
+                        <div key={day} className={`text-center p-3 rounded-md ${isPast ? 'bg-gray-700/50 opacity-60' : 'bg-gray-700'}`}>
+                            <p className="font-semibold text-sm text-white">{day}</p>
+                             <button
+                                onClick={() => onToggle(day)}
+                                disabled={isPast}
+                                className={`mt-3 p-2 w-full flex justify-center rounded-full transition-colors duration-200 ${
+                                    status === true
+                                    ? 'bg-green-900 text-green-300'
+                                    : status === false
+                                    ? 'bg-red-900 text-red-300'
+                                    : 'bg-gray-600 text-gray-400 hover:bg-gray-500'
+                                } ${isPast ? 'cursor-not-allowed' : ''}`}
+                                aria-label={`Marcar presença para ${day}`}
+                            >
+                                {status === true ? <CheckIcon /> : status === false ? <XIcon /> : <span className="h-5 w-5 flex items-center justify-center font-bold">-</span>}
+                            </button>
+                        </div>
+                    );
+                })}
+            </div>
+        </section>
+    );
+};
+
+
+const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance, setAttendanceRecords, currentWeekId, isAdmin, adminProfile }) => {
   const jsTodayIndex = new Date().getDay(); // 0 for Sunday, 1 for Monday...
-  const todayIndex = jsTodayIndex === 0 ? 6 : jsTodayIndex - 1; // Monday is 0, Sunday is 6
+  const todayIndex = jsTodayIndex === 0 ? 6 : jsTodayIndex - 1; 
   
-  const remainingDays = DAYS_OF_WEEK.slice(todayIndex);
-  
-  const [currentDay, setCurrentDay] = useState<DayKey>(remainingDays[0] || DAYS_OF_WEEK[todayIndex]);
+  const [currentDay, setCurrentDay] = useState<DayKey>(DAYS_OF_WEEK[todayIndex]);
   const [substituteModal, setSubstituteModal] = useState<{isOpen: boolean, person: Profile | null}>({isOpen: false, person: null});
   const [substituteId, setSubstituteId] = useState<string>('');
   
@@ -76,10 +117,22 @@ const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance,
         return;
     }
 
-    // Mark original person as absent
-    await handleToggleAttendance(originalPerson.id, currentDay);
-    // Mark substitute as present
-    await handleToggleAttendance(substituteId, currentDay);
+    // Set original person to absent
+    await supabase.from('attendances').upsert({ user_id: originalPerson.id, week_id: currentWeekId, day: currentDay, is_present: false }, { onConflict: 'user_id,week_id,day' });
+    
+    // Set substitute to present
+    await supabase.from('attendances').upsert({ user_id: substituteId, week_id: currentWeekId, day: currentDay, is_present: true }, { onConflict: 'user_id,week_id,day' });
+    
+    // Optimistically update local state
+    setAttendanceRecords(prev => {
+        const withoutOriginal = prev.filter(r => !(r.user_id === originalPerson.id && r.week_id === currentWeekId && r.day === currentDay));
+        const withoutSub = withoutOriginal.filter(r => !(r.user_id === substituteId && r.week_id === currentWeekId && r.day === currentDay));
+        return [
+            ...withoutSub,
+            { user_id: originalPerson.id, week_id: currentWeekId, day: currentDay, is_present: false },
+            { user_id: substituteId, week_id: currentWeekId, day: currentDay, is_present: true }
+        ];
+    });
 
     handleCloseSubstituteModal();
   };
@@ -90,9 +143,17 @@ const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance,
 
   return (
     <div className="flex flex-col gap-6">
+       {isAdmin && (
+         <AdminPersonalAttendance 
+            profile={adminProfile}
+            attendance={attendance}
+            onToggle={(day) => handleToggleAttendance(adminProfile.id, day)}
+         />
+       )}
+      
       <section className="bg-gray-800 rounded-lg shadow p-4 sm:p-6">
-        <h2 className="text-xl font-bold mb-4 text-gray-200">Selecione o Dia</h2>
-        <DaySelector currentDay={currentDay} onSelectDay={setCurrentDay} daysToDisplay={remainingDays} />
+        <h2 className="text-xl font-bold mb-4 text-gray-200">Visão Geral do Dia</h2>
+        <DaySelector currentDay={currentDay} onSelectDay={setCurrentDay} daysToDisplay={DAYS_OF_WEEK} />
       </section>
 
       <div className="grid md:grid-cols-3 gap-6">

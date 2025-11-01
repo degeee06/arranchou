@@ -28,6 +28,7 @@ const AuthView: React.FC = () => {
                         data: {
                             full_name: fullName,
                             employee_id: employeeId,
+                            role: 'employee', // Initialize role in user_metadata
                         }
                     }
                 });

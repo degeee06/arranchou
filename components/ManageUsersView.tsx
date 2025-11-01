@@ -20,20 +20,16 @@ const ManageUsersView: React.FC<ManageUsersViewProps> = ({ profiles, setProfiles
     setLoading(prev => ({ ...prev, [person.id]: true }));
     setError(null);
     
-    const { error } = await supabase
-      .from('profiles')
-      .update({ role: newRole })
-      .eq('id', person.id);
+    // Call the Supabase Edge Function to securely update the user's role
+    const { error } = await supabase.functions.invoke('update-user-role', {
+        body: { user_id: person.id, new_role: newRole },
+    });
 
     if (error) {
       console.error('Error changing role:', error);
-      setError('Falha ao alterar o cargo. Tente novamente.');
+      setError('Falha ao alterar o cargo. Verifique se a Função Edge "update-user-role" está configurada.');
     } else {
-      setProfiles(prevProfiles =>
-        prevProfiles.map(p =>
-          p.id === person.id ? { ...p, role: newRole } : p
-        )
-      );
+      // The realtime listener in App.tsx will handle the state update
     }
     setLoading(prev => ({ ...prev, [person.id]: false }));
   };

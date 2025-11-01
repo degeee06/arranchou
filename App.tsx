@@ -36,15 +36,20 @@ function App() {
   const fetchData = useCallback(async (currentSession: Session) => {
     try {
       setLoading(true);
-      const { data: userProfile, error: profileError } = await supabase
+      const { data: userProfileData, error: profileError } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', currentSession.user.id)
         .single();
       if (profileError) throw profileError;
-      setProfile(userProfile);
 
-      if (userProfile.role === 'admin') {
+      // Trust the session's metadata as the authoritative source of truth for the role
+      const userRole = currentSession.user.user_metadata.role || 'employee';
+      const authoritativeProfile: Profile = { ...userProfileData, role: userRole };
+      setProfile(authoritativeProfile);
+
+
+      if (authoritativeProfile.role === 'admin') {
         const { data: allProfiles, error: profilesError } = await supabase
           .from('profiles')
           .select('*')
@@ -52,7 +57,7 @@ function App() {
         if (profilesError) throw profilesError;
         setProfiles(allProfiles);
       } else {
-        setProfiles([userProfile]);
+        setProfiles([authoritativeProfile]);
       }
 
       const { data: allAttendances, error: attendancesError } = await supabase
@@ -95,7 +100,7 @@ function App() {
     return () => subscription.unsubscribe();
   }, [fetchData]);
 
-  // Realtime listener for new profiles (for admin)
+  // Realtime listener for profile changes (for admin)
   useEffect(() => {
     if (profile?.role !== 'admin') return;
 
@@ -103,12 +108,18 @@ function App() {
       .channel('profiles-changes')
       .on<Profile>(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'profiles' },
+        { event: '*', schema: 'public', table: 'profiles' },
         (payload) => {
-          setProfiles((currentProfiles) => 
-            [...currentProfiles, payload.new]
-            .sort((a, b) => a.full_name.localeCompare(b.full_name))
-          );
+            if (payload.eventType === 'INSERT') {
+                setProfiles((currentProfiles) => 
+                  [...currentProfiles, payload.new]
+                  .sort((a, b) => a.full_name.localeCompare(b.full_name))
+                );
+            } else if (payload.eventType === 'UPDATE') {
+                setProfiles((currentProfiles) =>
+                    currentProfiles.map(p => p.id === payload.new.id ? payload.new : p)
+                );
+            }
         }
       )
       .subscribe();
@@ -145,7 +156,7 @@ function App() {
   if (!session || !profile) {
     return <AuthView />;
   }
-
+  
   const isAdmin = profile.role === 'admin';
 
   return (
@@ -181,6 +192,7 @@ function App() {
                 setAttendanceRecords={setAttendanceRecords}
                 currentWeekId={currentWeekId}
                 isAdmin={isAdmin}
+                adminProfile={profile}
               />
             )}
             {view === 'history' && <HistoryView allProfiles={profiles} allAttendances={attendanceRecords} />}
