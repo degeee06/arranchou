@@ -24,12 +24,9 @@ const EmployeeWeekView: React.FC<EmployeeWeekViewProps> = ({ profile, attendance
 
         const currentStatus = attendance[profile.id]?.[day];
 
-        // The employee can only toggle between 'present' (true) and 'not marked' (undefined).
-        // They cannot set their status to 'absent' (false).
-        // If the current status is 'present', it will be changed to 'not marked'.
-        // If the current status is 'not marked' or 'absent', it will be changed to 'present'.
+        // New Cycle for employees: (undefined | false) -> true -> undefined
         if (currentStatus === true) {
-            // From present to not marked (delete the record)
+            // From present to not marked: delete the record
             const { error } = await supabase.from('attendances').delete().match({ user_id: profile.id, week_id: currentWeekId, day });
             if (error) {
                 alert("Erro ao atualizar presença.");
@@ -37,7 +34,7 @@ const EmployeeWeekView: React.FC<EmployeeWeekViewProps> = ({ profile, attendance
             }
             setAttendanceRecords(prev => prev.filter(r => !(r.user_id === profile.id && r.week_id === currentWeekId && r.day === day)));
         } else {
-            // From not marked (undefined) or absent (false) to present
+            // From not marked (undefined) or absent (false) to present: set is_present to true
             const { error } = await supabase.from('attendances').upsert(
                 { user_id: profile.id, week_id: currentWeekId, day, is_present: true },
                 { onConflict: 'user_id,week_id,day' }
