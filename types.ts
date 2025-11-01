@@ -4,6 +4,7 @@ export interface Profile {
   id: string; // uuid from auth.users
   updated_at?: string;
   full_name: string;
+  employee_id: string;
   role: 'admin' | 'employee';
   default_days: DayKey[];
 }

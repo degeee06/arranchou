@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { supabase } from '../supabase';
 
 const AuthView: React.FC = () => {
-    const [email, setEmail] = useState('');
+    const [employeeId, setEmployeeId] = useState('');
     const [password, setPassword] = useState('');
     const [fullName, setFullName] = useState('');
     const [loading, setLoading] = useState(false);
@@ -16,6 +16,9 @@ const AuthView: React.FC = () => {
         setError(null);
         setMessage(null);
 
+        // Generate a consistent, fake email from the employee ID for Supabase Auth
+        const email = `employee_${employeeId}@arranchou.app`;
+
         try {
             if (isSignUp) {
                 const { error } = await supabase.auth.signUp({
@@ -24,11 +27,12 @@ const AuthView: React.FC = () => {
                     options: {
                         data: {
                             full_name: fullName,
+                            employee_id: employeeId,
                         }
                     }
                 });
                 if (error) throw error;
-                setMessage('Cadastro realizado! Verifique seu email para confirmar a conta.');
+                setMessage('Cadastro realizado com sucesso! Você já pode entrar.');
             } else {
                 const { error } = await supabase.auth.signInWithPassword({
                     email,
@@ -38,7 +42,14 @@ const AuthView: React.FC = () => {
                 // Login will be handled by the listener in App.tsx
             }
         } catch (err: any) {
-            setError(err.error_description || err.message);
+            if (err.message.includes("Invalid login credentials")) {
+                setError("Nº do Crachá ou senha inválidos.");
+            } else if (err.message.includes("User already registered")) {
+                setError("Este Nº do Crachá já está cadastrado.");
+            }
+            else {
+                setError(err.error_description || err.message);
+            }
         } finally {
             setLoading(false);
         }
@@ -80,16 +91,16 @@ const AuthView: React.FC = () => {
                         </div>
                     )}
                     <div className="mb-4">
-                        <label className="block text-gray-300 text-sm font-bold mb-2" htmlFor="email">
-                            Email
+                        <label className="block text-gray-300 text-sm font-bold mb-2" htmlFor="employeeId">
+                            Nº do Crachá / Matrícula
                         </label>
                         <input
-                            id="email"
+                            id="employeeId"
                             className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-primary focus:border-brand-primary text-white"
-                            type="email"
-                            placeholder="seu@email.com"
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
+                            type="text"
+                            placeholder="Seu número de identificação"
+                            value={employeeId}
+                            onChange={(e) => setEmployeeId(e.target.value)}
                             required
                         />
                     </div>
