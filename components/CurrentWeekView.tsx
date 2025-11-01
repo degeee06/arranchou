@@ -76,31 +76,41 @@ const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance,
         alert("Não é possível alterar o status de dias que já passaram.");
         return;
     }
-      
-    const isPresent = !!attendance[personId]?.[day];
-    const newStatus = !isPresent;
-
-    const { error } = await supabase
-      .from('attendances')
-      .upsert(
-        { user_id: personId, week_id: currentWeekId, day: day, is_present: newStatus },
+    
+    const currentStatus = attendance[personId]?.[day];
+    
+    // Cycle: undefined -> true -> false -> undefined (by deleting)
+    if (currentStatus === undefined) {
+      // Set to present
+      const { error } = await supabase.from('attendances').upsert(
+        { user_id: personId, week_id: currentWeekId, day, is_present: true },
         { onConflict: 'user_id,week_id,day' }
       );
-    
-    if (error) {
-        console.error("Error toggling attendance", error);
+      if (error) {
         alert("Erro ao atualizar presença.");
         return;
+      }
+      setAttendanceRecords(prev => [...prev.filter(r => !(r.user_id === personId && r.week_id === currentWeekId && r.day === day)), { user_id: personId, week_id: currentWeekId, day, is_present: true }]);
+    } else if (currentStatus === true) {
+      // Set to absent
+      const { error } = await supabase.from('attendances').upsert(
+        { user_id: personId, week_id: currentWeekId, day, is_present: false },
+        { onConflict: 'user_id,week_id,day' }
+      );
+      if (error) {
+        alert("Erro ao atualizar presença.");
+        return;
+      }
+      setAttendanceRecords(prev => prev.map(r => (r.user_id === personId && r.week_id === currentWeekId && r.day === day) ? { ...r, is_present: false } : r));
+    } else {
+      // Set to not marked by deleting the record
+      const { error } = await supabase.from('attendances').delete().match({ user_id: personId, week_id: currentWeekId, day });
+      if (error) {
+        alert("Erro ao atualizar presença.");
+        return;
+      }
+      setAttendanceRecords(prev => prev.filter(r => !(r.user_id === personId && r.week_id === currentWeekId && r.day === day)));
     }
-
-    setAttendanceRecords(prev => {
-        const existingRecord = prev.find(r => r.user_id === personId && r.week_id === currentWeekId && r.day === day);
-        if (existingRecord) {
-            return prev.map(r => r.id === existingRecord.id ? { ...r, is_present: newStatus } : r);
-        } else {
-            return [...prev, { user_id: personId, week_id: currentWeekId, day: day, is_present: newStatus }];
-        }
-    });
   };
 
   const handleOpenSubstituteModal = (person: Profile) => {

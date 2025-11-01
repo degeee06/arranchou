@@ -22,31 +22,37 @@ const EmployeeWeekView: React.FC<EmployeeWeekViewProps> = ({ profile, attendance
             return;
         }
 
-        const isPresent = !!attendance[profile.id]?.[day];
-        const newStatus = !isPresent;
+        const currentStatus = attendance[profile.id]?.[day];
 
-        const { error } = await supabase
-          .from('attendances')
-          .upsert(
-            { user_id: profile.id, week_id: currentWeekId, day: day, is_present: newStatus },
-            { onConflict: 'user_id,week_id,day' }
-          );
-        
-        if (error) {
-            console.error("Error toggling attendance", error);
-            alert("Erro ao atualizar presença.");
-            return;
-        }
-
-        setAttendanceRecords(prev => {
-            const existingRecord = prev.find(r => r.user_id === profile.id && r.week_id === currentWeekId && r.day === day);
-            if (existingRecord) {
-                return prev.map(r => r.id === existingRecord.id ? { ...r, is_present: newStatus } : r);
-            } else {
-                const newRecord: AttendanceRecord = { user_id: profile.id, week_id: currentWeekId, day: day, is_present: newStatus };
-                return [...prev, newRecord];
+        // Cycle: undefined -> true -> false -> undefined (by deleting)
+        if (currentStatus === undefined) {
+            const { error } = await supabase.from('attendances').upsert(
+                { user_id: profile.id, week_id: currentWeekId, day, is_present: true },
+                { onConflict: 'user_id,week_id,day' }
+            );
+            if (error) {
+                alert("Erro ao atualizar presença.");
+                return;
             }
-        });
+            setAttendanceRecords(prev => [...prev.filter(r => !(r.user_id === profile.id && r.week_id === currentWeekId && r.day === day)), { user_id: profile.id, week_id: currentWeekId, day, is_present: true }]);
+        } else if (currentStatus === true) {
+            const { error } = await supabase.from('attendances').upsert(
+                { user_id: profile.id, week_id: currentWeekId, day, is_present: false },
+                { onConflict: 'user_id,week_id,day' }
+            );
+            if (error) {
+                alert("Erro ao atualizar presença.");
+                return;
+            }
+            setAttendanceRecords(prev => prev.map(r => (r.user_id === profile.id && r.week_id === currentWeekId && r.day === day) ? { ...r, is_present: false } : r));
+        } else {
+            const { error } = await supabase.from('attendances').delete().match({ user_id: profile.id, week_id: currentWeekId, day });
+            if (error) {
+                alert("Erro ao atualizar presença.");
+                return;
+            }
+            setAttendanceRecords(prev => prev.filter(r => !(r.user_id === profile.id && r.week_id === currentWeekId && r.day === day)));
+        }
     };
 
     return (
