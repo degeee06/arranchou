@@ -24,8 +24,9 @@ const EmployeeWeekView: React.FC<EmployeeWeekViewProps> = ({ profile, attendance
 
         const currentStatus = attendance[profile.id]?.[day];
 
-        // Cycle: undefined -> true -> false -> undefined (by deleting)
+        // Cycle: undefined -> true -> undefined. An employee can no longer mark themselves as absent (false).
         if (currentStatus === undefined) {
+            // Mark as present
             const { error } = await supabase.from('attendances').upsert(
                 { user_id: profile.id, week_id: currentWeekId, day, is_present: true },
                 { onConflict: 'user_id,week_id,day' }
@@ -35,17 +36,8 @@ const EmployeeWeekView: React.FC<EmployeeWeekViewProps> = ({ profile, attendance
                 return;
             }
             setAttendanceRecords(prev => [...prev.filter(r => !(r.user_id === profile.id && r.week_id === currentWeekId && r.day === day)), { user_id: profile.id, week_id: currentWeekId, day, is_present: true }]);
-        } else if (currentStatus === true) {
-            const { error } = await supabase.from('attendances').upsert(
-                { user_id: profile.id, week_id: currentWeekId, day, is_present: false },
-                { onConflict: 'user_id,week_id,day' }
-            );
-            if (error) {
-                alert("Erro ao atualizar presença.");
-                return;
-            }
-            setAttendanceRecords(prev => prev.map(r => (r.user_id === profile.id && r.week_id === currentWeekId && r.day === day) ? { ...r, is_present: false } : r));
         } else {
+            // If it's already marked as present, unmark it by deleting the record.
             const { error } = await supabase.from('attendances').delete().match({ user_id: profile.id, week_id: currentWeekId, day });
             if (error) {
                 alert("Erro ao atualizar presença.");
