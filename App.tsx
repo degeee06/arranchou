@@ -135,11 +135,25 @@ function App() {
 
 
   const handleLogout = async () => {
-    const { error } = await supabase.auth.signOut({ scope: 'local' });
+    const { error } = await supabase.auth.signOut();
     if (error) {
       console.error("Error signing out:", error);
-      alert("Ocorreu um erro ao sair. Por favor, tente novamente.");
+      // Handle the case where the session is already gone client-side.
+      // This is not a critical error for the user, as the goal is to be logged out.
+      // We can manually clear the state to ensure the UI updates correctly.
+      if (error.name === 'AuthSessionMissingError') {
+        console.warn('Session was already missing on sign out. Clearing state manually.');
+        // Manually clear all user-related state, since the onAuthStateChange
+        // listener won't fire if the session was already gone.
+        setSession(null);
+        setProfile(null);
+        setProfiles([]);
+        setAttendanceRecords([]);
+      } else {
+        alert("Ocorreu um erro ao sair. Por favor, tente novamente.");
+      }
     }
+    // On success, the onAuthStateChange listener will clear the state.
   };
   
   // Transform attendance records into a more usable format
