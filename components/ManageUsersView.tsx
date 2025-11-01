@@ -85,10 +85,10 @@ const ManageUsersView: React.FC<ManageUsersViewProps> = ({ profiles, setProfiles
           <table className="min-w-full divide-y divide-gray-700">
             <thead className="bg-gray-700">
               <tr>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Nome</th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Nº do Crachá</th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Cargo</th>
-                <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider">Ações</th>
+                <th scope="col" className="px-2 sm:px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Nome</th>
+                <th scope="col" className="px-2 sm:px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Nº do Crachá</th>
+                <th scope="col" className="px-2 sm:px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Cargo</th>
+                <th scope="col" className="px-2 sm:px-6 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider">Ações</th>
               </tr>
             </thead>
             <tbody className="bg-gray-800 divide-y divide-gray-700">
@@ -110,9 +110,9 @@ const ManageUsersView: React.FC<ManageUsersViewProps> = ({ profiles, setProfiles
                 
                 return (
                   <tr key={person.id} className="hover:bg-gray-700">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-white">{person.full_name}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">{person.employee_id}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                    <td className="px-2 sm:px-6 py-4 whitespace-nowrap text-sm font-medium text-white">{person.full_name}</td>
+                    <td className="px-2 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-300">{person.employee_id}</td>
+                    <td className="px-2 sm:px-6 py-4 whitespace-nowrap text-sm">
                       <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
                         person.role === 'super_admin' ? 'bg-red-200 text-red-800' :
                         person.role === 'admin' ? 'bg-indigo-200 text-indigo-800' : 
@@ -121,7 +121,7 @@ const ManageUsersView: React.FC<ManageUsersViewProps> = ({ profiles, setProfiles
                         {ROLES_MAP[person.role]}
                       </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium flex justify-end items-center gap-2">
+                    <td className="px-2 sm:px-6 py-4 whitespace-nowrap text-right text-sm font-medium flex justify-end items-center gap-2">
                       <button 
                         onClick={() => handleRoleChange(person)}
                         disabled={isLoading || !canManageRole}

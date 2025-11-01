@@ -164,29 +164,29 @@ function App() {
   const isAdmin = profile.role === 'admin' || profile.role === 'super_admin';
 
   return (
-    <div className="container mx-auto px-4 py-8 max-w-7xl">
+    <div className="container mx-auto px-2 sm:px-4 py-4 sm:py-8 max-w-7xl">
       <Header session={session} profile={profile} onLogout={handleLogout} />
       <main>
         {isAdmin ? (
           <>
-            <nav className="mb-6 flex justify-center border-b border-gray-700">
+            <nav className="mb-6 flex justify-around sm:justify-center border-b border-gray-700">
               <button
                 onClick={() => setView('current')}
-                className={`px-4 py-2 font-semibold transition-colors ${view === 'current' ? 'text-brand-primary border-b-2 border-brand-primary' : 'text-gray-400'}`}
+                className={`px-2 sm:px-4 py-2 font-semibold transition-colors ${view === 'current' ? 'text-brand-primary border-b-2 border-brand-primary' : 'text-gray-400'}`}
               >
-                <span className="flex items-center gap-2"><CalendarIcon /> Semana Atual</span>
+                <span className="flex items-center gap-2"><CalendarIcon /> <span className="hidden sm:inline">Semana Atual</span></span>
               </button>
               <button
                 onClick={() => setView('history')}
-                className={`px-4 py-2 font-semibold transition-colors ${view === 'history' ? 'text-brand-primary border-b-2 border-brand-primary' : 'text-gray-400'}`}
+                className={`px-2 sm:px-4 py-2 font-semibold transition-colors ${view === 'history' ? 'text-brand-primary border-b-2 border-brand-primary' : 'text-gray-400'}`}
               >
-                 <span className="flex items-center gap-2"><HistoryIcon /> Histórico</span>
+                 <span className="flex items-center gap-2"><HistoryIcon /> <span className="hidden sm:inline">Histórico</span></span>
               </button>
               <button
                 onClick={() => setView('manage_users')}
-                className={`px-4 py-2 font-semibold transition-colors ${view === 'manage_users' ? 'text-brand-primary border-b-2 border-brand-primary' : 'text-gray-400'}`}
+                className={`px-2 sm:px-4 py-2 font-semibold transition-colors ${view === 'manage_users' ? 'text-brand-primary border-b-2 border-brand-primary' : 'text-gray-400'}`}
               >
-                 <span className="flex items-center gap-2"><UsersIcon /> Gerenciar Usuários</span>
+                 <span className="flex items-center gap-2"><UsersIcon /> <span className="hidden sm:inline">Gerenciar Usuários</span></span>
               </button>
             </nav>
             {view === 'current' && (

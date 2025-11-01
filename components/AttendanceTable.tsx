@@ -29,14 +29,14 @@ const AttendanceTable: React.FC<AttendanceTableProps> = ({ people, attendance, c
       <table className="min-w-full divide-y divide-gray-700">
         <thead className="bg-gray-700">
           <tr>
-            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+            <th scope="col" className="px-2 sm:px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
               Nome
             </th>
-            <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-300 uppercase tracking-wider">
+            <th scope="col" className="px-2 sm:px-6 py-3 text-center text-xs font-medium text-gray-300 uppercase tracking-wider">
               Presença ({currentDay})
             </th>
             {isAdmin && (
-              <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider">
+              <th scope="col" className="px-2 sm:px-6 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider">
                 Ações
               </th>
             )}
@@ -47,10 +47,10 @@ const AttendanceTable: React.FC<AttendanceTableProps> = ({ people, attendance, c
             const status = attendance[person.id]?.[currentDay];
             return (
                 <tr key={person.id} className="hover:bg-gray-700">
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-white">
+                <td className="px-2 sm:px-6 py-4 whitespace-nowrap text-sm font-medium text-white">
                     {person.full_name}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-center">
+                <td className="px-2 sm:px-6 py-4 whitespace-nowrap text-center">
                     <button
                     onClick={() => onToggleAttendance(person.id, currentDay)}
                     className={`p-2 rounded-full transition-colors duration-200 ${
@@ -66,7 +66,7 @@ const AttendanceTable: React.FC<AttendanceTableProps> = ({ people, attendance, c
                     </button>
                 </td>
                 {isAdmin && (
-                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                  <td className="px-2 sm:px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <button
                       onClick={() => onSubstitute(person)}
                       className="text-blue-400 hover:text-blue-300 p-2 rounded-full hover:bg-gray-600"
