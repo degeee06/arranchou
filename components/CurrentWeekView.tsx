@@ -1,13 +1,12 @@
-import React, { useState } from 'react';
-import { DayKey, Profile, Attendance, AttendanceRecord } from '../types';
+import React, { useState, useCallback } from 'react';
+import { Profile, Attendance, DayKey, AttendanceRecord } from '../types';
+import { supabase } from '../supabase';
 import { DAYS_OF_WEEK } from '../constants';
 import DaySelector from './DaySelector';
 import AttendanceTable from './AttendanceTable';
 import Summary from './Summary';
-import { SearchIcon } from './icons';
-import Modal from './Modal';
-import { supabase } from '../supabase';
 import AddPersonForm from './AddPersonForm';
+import Modal from './Modal';
 
 interface CurrentWeekViewProps {
   profiles: Profile[];
@@ -19,206 +18,190 @@ interface CurrentWeekViewProps {
   onAddPerson: (name: string, email: string, password: string, selectedDays: DayKey[]) => Promise<void>;
 }
 
-const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, setProfiles, attendance, setAttendanceRecords, currentWeekId, isAdmin, onAddPerson }) => {
-  const jsTodayIndex = new Date().getDay(); // 0 for Sunday, 1 for Monday...
-  const todayIndex = jsTodayIndex === 0 ? 6 : jsTodayIndex - 1; // Monday is 0, Sunday is 6
-  
-  const remainingDays = DAYS_OF_WEEK.slice(todayIndex);
-  
-  const [currentDay, setCurrentDay] = useState<DayKey>(remainingDays[0] || DAYS_OF_WEEK[todayIndex]);
-  const [substituteModal, setSubstituteModal] = useState<{isOpen: boolean, person: Profile | null}>({isOpen: false, person: null});
-  const [substituteId, setSubstituteId] = useState<string>('');
-  
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isSearchVisible, setIsSearchVisible] = useState(false);
-  
-  const [removePersonConfirm, setRemovePersonConfirm] = useState<{
-    isOpen: boolean;
-    person: Profile | null;
-  }>({ isOpen: false, person: null });
+const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({
+  profiles,
+  setProfiles,
+  attendance,
+  setAttendanceRecords,
+  currentWeekId,
+  isAdmin,
+  onAddPerson,
+}) => {
+  const [currentDay, setCurrentDay] = useState<DayKey>(() => {
+    const jsTodayIndex = new Date().getDay();
+    // Sunday is 0 in JS, but we want it to be 6. Monday is 1 -> 0.
+    const todayIndex = jsTodayIndex === 0 ? 6 : jsTodayIndex - 1;
+    return DAYS_OF_WEEK[todayIndex] || 'Segunda';
+  });
 
+  const [personToSubstitute, setPersonToSubstitute] = useState<Profile | null>(null);
+  const [personToRemove, setPersonToRemove] = useState<Profile | null>(null);
 
-  const handleToggleAttendance = async (personId: string, day: DayKey) => {
-    const isPresent = !!attendance[personId]?.[day];
-    const newStatus = !isPresent;
+  const setPersonAttendance = useCallback(async (personId: string, day: DayKey, is_present: boolean) => {
+    const { data, error } = await supabase
+        .from('attendances')
+        .upsert(
+            { user_id: personId, week_id: currentWeekId, day: day, is_present },
+            { onConflict: 'user_id,week_id,day' }
+        ).select().single();
 
-    const { error } = await supabase
-      .from('attendances')
-      .upsert(
-        { user_id: personId, week_id: currentWeekId, day: day, is_present: newStatus },
-        { onConflict: 'user_id,week_id,day' }
-      );
-    
     if (error) {
-        console.error("Error toggling attendance", error);
+        console.error("Error setting attendance", error);
         alert("Erro ao atualizar presença.");
-        return;
+        throw error;
     }
 
-    setAttendanceRecords(prev => {
-        const existingRecord = prev.find(r => r.user_id === personId && r.week_id === currentWeekId && r.day === day);
-        if (existingRecord) {
-            return prev.map(r => r.id === existingRecord.id ? { ...r, is_present: newStatus } : r);
-        } else {
-            return [...prev, { user_id: personId, week_id: currentWeekId, day: day, is_present: newStatus }];
-        }
-    });
+    if (data) {
+        setAttendanceRecords(prev => {
+            const recordIndex = prev.findIndex(r => r.user_id === personId && r.week_id === currentWeekId && r.day === day);
+            if (recordIndex > -1) {
+                const newRecords = [...prev];
+                newRecords[recordIndex] = data as AttendanceRecord;
+                return newRecords;
+            } else {
+                return [...prev, data as AttendanceRecord];
+            }
+        });
+    }
+  }, [currentWeekId, setAttendanceRecords]);
+
+  const handleToggleAttendance = useCallback(async (personId: string, day: DayKey) => {
+    const isPresent = !!attendance[personId]?.[day];
+    await setPersonAttendance(personId, day, !isPresent);
+  }, [attendance, setPersonAttendance]);
+  
+  const handleSubstitute = (person: Profile) => {
+    setPersonToSubstitute(person);
   };
 
-  const handleOpenSubstituteModal = (person: Profile) => {
-    setSubstituteModal({ isOpen: true, person });
+  const confirmSubstitute = async (substitutePersonId: string) => {
+    if (!personToSubstitute) return;
+    try {
+        // Mark original person as absent.
+        await setPersonAttendance(personToSubstitute.id, currentDay, false);
+        // Mark substitute as present.
+        await setPersonAttendance(substitutePersonId, currentDay, true);
+
+        alert(`${profiles.find(p => p.id === substitutePersonId)?.full_name} foi adicionado como substituto para ${personToSubstitute.full_name} em ${currentDay}.`);
+        setPersonToSubstitute(null);
+    } catch (e) {
+        // Error already alerted in setPersonAttendance
+    }
+  };
+  
+  const handleRemovePerson = (person: Profile) => {
+    setPersonToRemove(person);
   };
 
-  const handleCloseSubstituteModal = () => {
-    setSubstituteModal({ isOpen: false, person: null });
-    setSubstituteId('');
-  };
-
-  const handleSubstitutePerson = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!substituteModal.person || !substituteId) return;
-
-    const originalPerson = substituteModal.person;
-
-    if (originalPerson.id === substituteId) {
-        alert("O substituto não pode ser a mesma pessoa.");
+  const confirmRemovePerson = async () => {
+    if (!personToRemove) return;
+    if (!window.confirm(`Tem certeza que deseja remover ${personToRemove.full_name} do sistema? O perfil será removido permanentemente.`)) {
+        setPersonToRemove(null);
         return;
     }
-
-    // Mark original person as absent
-    await handleToggleAttendance(originalPerson.id, currentDay);
-    // Mark substitute as present
-    await handleToggleAttendance(substituteId, currentDay);
-
-    handleCloseSubstituteModal();
-  };
-
-  const handleOpenRemoveModal = (person: Profile) => {
-    setRemovePersonConfirm({ isOpen: true, person });
-  };
-
-  const proceedWithRemovePerson = async () => {
-    if (!removePersonConfirm.person) return;
     
-    const personToRemove = removePersonConfirm.person;
-
-    // A remoção de usuários de `auth.users` requer privilégios de admin e não pode ser
-    // feita de forma segura do lado do cliente. A melhor prática seria usar uma
-    // Edge Function do Supabase. Por enquanto, deletamos apenas o perfil.
+    // This only removes the profile, not the auth user for security reasons.
+    // That must be done manually in the Supabase dashboard.
     const { error } = await supabase
       .from('profiles')
       .delete()
-      .match({ id: personToRemove.id });
+      .eq('id', personToRemove.id);
 
     if (error) {
-        alert(`Erro ao remover pessoa: ${error.message}`);
-        console.error("Remove person error:", error);
+      alert(`Erro ao remover o perfil: ${error.message}. O usuário ainda pode existir no sistema de autenticação.`);
     } else {
-        // Atualiza o estado local para refletir a remoção imediatamente.
-        setProfiles(prev => prev.filter(p => p.id !== personToRemove.id));
-        setAttendanceRecords(prev => prev.filter(r => r.user_id !== personToRemove.id));
-        alert(`Perfil de "${personToRemove.full_name}" removido. A conta de autenticação deve ser removida manualmente no painel do Supabase.`);
+      alert(`${personToRemove.full_name} foi removido.`);
+      setProfiles(prev => prev.filter(p => p.id !== personToRemove!.id));
+      setAttendanceRecords(prev => prev.filter(record => record.user_id !== personToRemove!.id));
     }
-    
-    setRemovePersonConfirm({ isOpen: false, person: null });
+    setPersonToRemove(null);
   };
 
-  const filteredPeople = profiles.filter(person =>
-    person.full_name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
   return (
-    <div className="flex flex-col gap-6">
-      <section className="bg-gray-800 rounded-lg shadow p-4 sm:p-6">
-        <h2 className="text-xl font-bold mb-4 text-gray-200">Selecione o Dia</h2>
-        <DaySelector currentDay={currentDay} onSelectDay={setCurrentDay} daysToDisplay={remainingDays} />
-      </section>
-
-      <div className="grid md:grid-cols-3 gap-6">
-        <div className="md:col-span-2 flex flex-col gap-6">
-          <section className="bg-gray-800 rounded-lg shadow p-4 sm:p-6">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold text-gray-200">Participantes do Dia</h2>
-              <div className="flex items-center gap-2">
-                {isSearchVisible && (
-                    <input
-                        type="text"
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        placeholder="Pesquisar..."
-                        className="w-40 sm:w-48 px-3 py-1.5 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-primary focus:border-brand-primary text-sm transition-all duration-300"
-                        autoFocus
-                        onBlur={() => { if(!searchQuery) setIsSearchVisible(false); }}
-                    />
-                )}
-                <button
-                    onClick={() => setIsSearchVisible(prev => !prev)}
-                    className="p-2 rounded-full text-gray-400 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-brand-primary"
-                    aria-label="Pesquisar pessoa"
-                >
-                    <SearchIcon />
-                </button>
-              </div>
-            </div>
-            <AttendanceTable
-              people={filteredPeople}
-              attendance={attendance}
-              currentDay={currentDay}
-              isAdmin={isAdmin}
-              onToggleAttendance={handleToggleAttendance}
-              onSubstitute={handleOpenSubstituteModal}
-              onRemovePerson={handleOpenRemoveModal}
-            />
-          </section>
+    <div className="flex flex-col lg:flex-row gap-6">
+      <div className="lg:w-2/3 flex flex-col gap-6">
+        <div className="bg-gray-800 rounded-lg shadow p-4">
+          <DaySelector
+            currentDay={currentDay}
+            onSelectDay={setCurrentDay}
+            daysToDisplay={DAYS_OF_WEEK}
+          />
         </div>
-        <aside className="flex flex-col gap-6">
-          {isAdmin && <AddPersonForm onAddPerson={onAddPerson} />}
-          <Summary people={profiles} attendance={attendance} currentDay={currentDay} />
-        </aside>
+        <AttendanceTable
+          people={profiles}
+          attendance={attendance}
+          currentDay={currentDay}
+          isAdmin={isAdmin}
+          onToggleAttendance={handleToggleAttendance}
+          onSubstitute={handleSubstitute}
+          onRemovePerson={handleRemovePerson}
+        />
+      </div>
+      <div className="lg:w-1/3 flex flex-col gap-6">
+        <Summary
+          people={profiles.filter(p => p.default_days.includes(currentDay))}
+          attendance={attendance}
+          currentDay={currentDay}
+        />
+        {isAdmin && <AddPersonForm onAddPerson={onAddPerson} />}
       </div>
 
-      <Modal isOpen={substituteModal.isOpen} onClose={handleCloseSubstituteModal} title={`Substituir ${substituteModal.person?.full_name}`}>
-        <form onSubmit={handleSubstitutePerson} className="flex flex-col gap-4 mt-4">
-            <p className="text-sm text-gray-400">
-                Selecione um substituto da lista. A pessoa original será marcada com falta e o substituto com presença.
-            </p>
-            <select
-                value={substituteId}
-                onChange={e => setSubstituteId(e.target.value)}
-                required
-                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-primary focus:border-brand-primary sm:text-sm"
-            >
-                <option value="" disabled>Selecione uma pessoa</option>
-                {profiles.filter(p => p.id !== substituteModal.person?.id).map(p => (
-                    <option key={p.id} value={p.id}>{p.full_name}</option>
-                ))}
-            </select>
-            <button type="submit" className="w-full bg-brand-primary hover:bg-brand-secondary text-white font-bold py-2 px-4 rounded-md transition duration-300">
-                Confirmar Substituição
-            </button>
-        </form>
-      </Modal>
-
-      <Modal 
-        isOpen={removePersonConfirm.isOpen} 
-        onClose={() => setRemovePersonConfirm({ isOpen: false, person: null })}
-        title="Confirmar Remoção"
+      <Modal
+        isOpen={!!personToSubstitute}
+        onClose={() => setPersonToSubstitute(null)}
+        title={`Substituir ${personToSubstitute?.full_name}`}
       >
         <div className="mt-4">
-            <p className="text-sm text-gray-400">
-                Tem certeza que deseja remover <strong>{removePersonConfirm.person?.full_name}</strong>?
-            </p>
-            <p className="text-sm text-gray-400 mt-2">
-                Esta ação removerá o perfil da pessoa. A conta de usuário associada deverá ser removida manualmente no painel do Supabase para completar a exclusão.
-            </p>
-            <div className="mt-6 flex justify-end gap-3">
-                <button onClick={() => setRemovePersonConfirm({ isOpen: false, person: null })} type="button" className="px-4 py-2 text-sm font-medium text-gray-200 bg-gray-600 border border-gray-500 rounded-md shadow-sm hover:bg-gray-700">
-                    Cancelar
-                </button>
-                <button onClick={proceedWithRemovePerson} type="button" className="px-4 py-2 text-sm font-medium text-white bg-status-absent border border-transparent rounded-md shadow-sm hover:bg-red-700">
-                    Remover
-                </button>
-            </div>
+          <p className="text-sm text-gray-400 mb-4">
+            Selecione quem irá substituir {personToSubstitute?.full_name} em {currentDay}.
+            A pessoa original será marcada como <strong>ausente</strong> e a substituta como <strong>presente</strong>.
+          </p>
+          <div className="max-h-60 overflow-y-auto">
+            <ul className="divide-y divide-gray-700">
+              {profiles
+                .filter(p => p.id !== personToSubstitute?.id)
+                .sort((a, b) => a.full_name.localeCompare(b.full_name))
+                .map(p => (
+                  <li key={p.id}>
+                    <button
+                      onClick={() => confirmSubstitute(p.id)}
+                      className="w-full text-left p-3 hover:bg-gray-700 rounded-md transition-colors"
+                    >
+                      {p.full_name}
+                    </button>
+                  </li>
+                ))}
+            </ul>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={!!personToRemove}
+        onClose={() => setPersonToRemove(null)}
+        title={`Remover ${personToRemove?.full_name}?`}
+      >
+        <div className="mt-4">
+          <p className="text-sm text-gray-300">
+            Esta ação é irreversível e removerá o perfil de <strong>{personToRemove?.full_name}</strong>.
+          </p>
+          <p className="text-xs text-gray-400 mt-2">
+            Nota: A conta de usuário associada (login) <strong>NÃO</strong> será removida por segurança. Isso deve ser feito manualmente no painel do Supabase.
+          </p>
+          <div className="mt-6 flex justify-end gap-3">
+            <button
+              onClick={() => setPersonToRemove(null)}
+              className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white font-bold rounded-md transition duration-300"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={confirmRemovePerson}
+              className="px-4 py-2 bg-red-800 hover:bg-red-700 text-white font-bold rounded-md transition duration-300"
+            >
+              Confirmar Remoção
+            </button>
+          </div>
         </div>
       </Modal>
     </div>
