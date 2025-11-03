@@ -153,9 +153,10 @@ const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance,
     handleCloseSubstituteModal();
   };
   
-  const filteredPeople = profiles.filter(person =>
-    person.full_name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredPeople = profiles.filter(person => {
+    const query = searchQuery.toLowerCase();
+    return person.full_name.toLowerCase().includes(query) || person.employee_id.includes(query);
+  });
 
   return (
     <div className="flex flex-col gap-6">
