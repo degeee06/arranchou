@@ -155,7 +155,7 @@ const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance,
   
   const filteredPeople = profiles.filter(person => {
     const query = searchQuery.toLowerCase();
-    return person.full_name.toLowerCase().includes(query) || person.employee_id.includes(query);
+    return person.full_name.toLowerCase().includes(query) || person.employee_id.toLowerCase().includes(query);
   });
 
   return (
