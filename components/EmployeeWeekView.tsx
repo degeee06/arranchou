@@ -60,13 +60,13 @@ const EmployeeWeekView: React.FC<EmployeeWeekViewProps> = ({ profile, attendance
                             const status = attendance[profile.id]?.[day];
 
                             return (
-                                <tr key={day} className={`hover:bg-gray-700/50 ${isPast ? 'opacity-50' : ''}`}>
-                                    <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-white">{day}</td>
+                                <tr key={day} className={`hover:bg-gray-700/50 ${isPast ? 'opacity-40' : ''}`}>
+                                    <td className={`px-4 py-3 whitespace-nowrap text-sm font-medium ${isPast ? 'text-gray-400' : 'text-white'}`}>{day}</td>
                                     <td className="px-4 py-3 whitespace-nowrap text-center">
                                         <button
                                             onClick={() => handleToggleAttendance(day)}
                                             disabled={isPast}
-                                            className={`p-2 rounded-full transition-all duration-200 transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-70 ${
+                                            className={`p-2 rounded-full transition-all duration-200 transform active:scale-95 disabled:cursor-not-allowed ${
                                                 status === true
                                                 ? 'bg-green-900 text-green-300 hover:bg-green-800'
                                                 : status === false
