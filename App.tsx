@@ -8,7 +8,8 @@ import CurrentWeekView from './components/CurrentWeekView';
 import HistoryView from './components/HistoryView';
 import EmployeeWeekView from './components/EmployeeWeekView';
 import ManageUsersView from './components/ManageUsersView';
-import { CalendarIcon, HistoryIcon, UsersIcon } from './components/icons';
+import PredictiveAnalysisView from './components/PredictiveAnalysisView';
+import { CalendarIcon, HistoryIcon, UsersIcon, ChartBarIcon } from './components/icons';
 
 // Function to get ISO week number (e.g., 2024-W42)
 export const getWeekId = (date: Date): string => {
@@ -31,7 +32,7 @@ function App() {
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentWeekId] = useState<string>(getWeekId(new Date()));
-  const [view, setView] = useState<'current' | 'history' | 'manage_users'>('current');
+  const [view, setView] = useState<'current' | 'history' | 'manage_users' | 'analytics'>('current');
 
   const fetchData = useCallback(async (currentSession: Session) => {
     try {
@@ -207,6 +208,12 @@ function App() {
               >
                 <span className="flex items-center gap-2"><CalendarIcon /> <span className="hidden sm:inline">Semana Atual</span></span>
               </button>
+               <button
+                onClick={() => setView('analytics')}
+                className={`px-2 sm:px-4 py-2 font-semibold transition-colors ${view === 'analytics' ? 'text-brand-primary border-b-2 border-brand-primary' : 'text-gray-400'}`}
+              >
+                 <span className="flex items-center gap-2"><ChartBarIcon /> <span className="hidden sm:inline">Análise Preditiva</span></span>
+              </button>
               <button
                 onClick={() => setView('history')}
                 className={`px-2 sm:px-4 py-2 font-semibold transition-colors ${view === 'history' ? 'text-brand-primary border-b-2 border-brand-primary' : 'text-gray-400'}`}
@@ -230,6 +237,7 @@ function App() {
                 adminProfile={profile}
               />
             )}
+            {view === 'analytics' && <PredictiveAnalysisView />}
             {view === 'history' && <HistoryView allProfiles={profiles} />}
             {view === 'manage_users' && (
               <ManageUsersView

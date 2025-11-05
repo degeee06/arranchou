@@ -29,3 +29,14 @@ export interface HistoryEntry {
   people: Profile[];
   attendance: Attendance;
 }
+
+export interface Prediction {
+  day: DayKey;
+  predicted_attendees: number;
+}
+
+export interface PredictionResult {
+  nextWeekId: string;
+  predictions: Prediction[];
+  insight: string;
+}

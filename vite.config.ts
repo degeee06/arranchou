@@ -12,8 +12,9 @@ export default defineConfig(({ mode }) => {
       },
       plugins: [react()],
       define: {
-        'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
+        // Use the user-provided DEEPSEEK_API_KEY for the application's API_KEY
+        'process.env.API_KEY': JSON.stringify(env.DEEPSEEK_API_KEY),
+        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY) // Keep for compatibility
       },
       resolve: {
         alias: {
