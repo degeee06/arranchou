@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Profile } from '../types';
 import { supabase } from '../supabase';
 import Modal from './Modal';
-import { TrashIcon } from './icons';
+import { DotsVerticalIcon } from './icons';
 
 interface ManageUsersViewProps {
   profiles: Profile[];
@@ -20,9 +20,21 @@ const ManageUsersView: React.FC<ManageUsersViewProps> = ({ profiles, setProfiles
   const [loading, setLoading] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
   const [removeConfirm, setRemoveConfirm] = useState<Profile | null>(null);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (openMenuId && !(event.target as HTMLElement).closest('.actions-menu-container')) {
+        setOpenMenuId(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [openMenuId]);
 
   const handleRoleChange = async (person: Profile) => {
-    // Admins can only promote employees to admin. Super admins can do both.
     const originalRole = person.role;
     const newRole = originalRole === 'admin' ? 'employee' : 'admin';
     
@@ -96,17 +108,15 @@ const ManageUsersView: React.FC<ManageUsersViewProps> = ({ profiles, setProfiles
                 const isLoading = loading[person.id];
                 const isCurrentUser = person.id === currentUserProfile.id;
 
-                // --- Permission Logic ---
                 let canManageRole = false;
                 let canDelete = false;
                 if (currentUserProfile.role === 'super_admin' && !isCurrentUser) {
-                    canManageRole = true;
+                    canManageRole = person.role !== 'super_admin';
                     canDelete = true;
                 } else if (currentUserProfile.role === 'admin' && person.role === 'employee') {
                     canManageRole = true;
                     canDelete = true;
                 }
-                // An admin cannot demote/delete another admin or super_admin
                 
                 return (
                   <tr key={person.id} className="hover:bg-gray-700">
@@ -121,25 +131,54 @@ const ManageUsersView: React.FC<ManageUsersViewProps> = ({ profiles, setProfiles
                         {ROLES_MAP[person.role]}
                       </span>
                     </td>
-                    <td className="px-2 sm:px-6 py-4 whitespace-nowrap text-right text-sm font-medium flex justify-end items-center gap-2">
-                      <button 
-                        onClick={() => handleRoleChange(person)}
-                        disabled={isLoading || !canManageRole}
-                        className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${canManageRole ? 'hover:bg-gray-600' : ''} ${person.role === 'admin' ? 'text-yellow-400' : 'text-indigo-400'}`}
-                        aria-label={person.role === 'admin' ? `Rebaixar ${person.full_name}` : `Promover ${person.full_name}`}
-                        title={!canManageRole ? 'Você não tem permissão para alterar este cargo.' : ''}
-                      >
-                        {isLoading ? '...' : (person.role === 'admin' ? 'Rebaixar' : 'Promover')}
-                      </button>
-                      <button
-                        onClick={() => setRemoveConfirm(person)}
-                        disabled={isLoading || !canDelete}
-                        className={`p-2 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${canDelete ? 'text-red-400 hover:text-red-300 hover:bg-gray-600' : 'text-gray-600'}`}
-                        aria-label={`Remover ${person.full_name}`}
-                        title={!canDelete ? 'Você não tem permissão para remover este usuário.' : ''}
-                      >
-                        <TrashIcon />
-                      </button>
+                    <td className="px-2 sm:px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                      <div className="relative inline-block text-left actions-menu-container">
+                        <button
+                          onClick={() => setOpenMenuId(openMenuId === person.id ? null : person.id)}
+                          disabled={isLoading}
+                          className="p-2 rounded-full text-gray-400 hover:bg-gray-600 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-brand-primary"
+                          id={`menu-button-${person.id}`}
+                          aria-haspopup="true"
+                          aria-expanded={openMenuId === person.id}
+                        >
+                          <span className="sr-only">Opções para {person.full_name}</span>
+                          {isLoading ? (
+                            <span className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent block"></span>
+                          ) : (
+                            <DotsVerticalIcon />
+                          )}
+                        </button>
+
+                        {openMenuId === person.id && (
+                          <div
+                            className="origin-top-right absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-gray-700 ring-1 ring-black ring-opacity-5 z-10 focus:outline-none"
+                            role="menu"
+                            aria-orientation="vertical"
+                            aria-labelledby={`menu-button-${person.id}`}
+                          >
+                            <div className="py-1" role="none">
+                              <button
+                                onClick={() => { handleRoleChange(person); setOpenMenuId(null); }}
+                                disabled={!canManageRole}
+                                className="w-full text-left block px-4 py-2 text-sm text-gray-200 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                                role="menuitem"
+                                title={!canManageRole ? 'Você não tem permissão para alterar este cargo.' : (person.role === 'admin' ? 'Rebaixar para Funcionário' : 'Promover para Admin')}
+                              >
+                                {person.role === 'admin' ? 'Rebaixar para Funcionário' : 'Promover para Admin'}
+                              </button>
+                              <button
+                                onClick={() => { setRemoveConfirm(person); setOpenMenuId(null); }}
+                                disabled={!canDelete}
+                                className="w-full text-left block px-4 py-2 text-sm text-red-400 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                                role="menuitem"
+                                title={!canDelete ? 'Você não tem permissão para remover este usuário.' : 'Remover usuário permanentemente'}
+                              >
+                                Remover Usuário
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -162,11 +201,11 @@ const ManageUsersView: React.FC<ManageUsersViewProps> = ({ profiles, setProfiles
                 Esta ação é irreversível. O usuário e todos os seus dados de presença serão apagados do sistema.
             </p>
             <div className="mt-6 flex justify-end gap-3">
-                <button onClick={() => setRemoveConfirm(null)} type="button" className="px-4 py-2 text-sm font-medium text-gray-200 bg-gray-600 border border-gray-500 rounded-md shadow-sm hover:bg-gray-700">
+                <button onClick={() => setRemoveConfirm(null)} type="button" className="px-4 py-2 text-sm font-medium text-gray-200 bg-gray-600 border border-gray-500 rounded-md shadow-sm hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-white">
                     Cancelar
                 </button>
-                <button onClick={handleRemoveUser} type="button" className="px-4 py-2 text-sm font-medium text-white bg-status-absent border border-transparent rounded-md shadow-sm hover:bg-red-700 disabled:bg-gray-500" disabled={loading[removeConfirm?.id || '']}>
-                    {loading[removeConfirm?.id || ''] ? 'Removendo...' : 'Remover'}
+                <button onClick={handleRemoveUser} type="button" className="px-4 py-2 text-sm font-medium text-white bg-status-absent border border-transparent rounded-md shadow-sm hover:bg-red-700 disabled:bg-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-red-500" disabled={loading[removeConfirm?.id || '']}>
+                    {loading[removeConfirm?.id || ''] ? 'Removendo...' : 'Sim, Remover'}
                 </button>
             </div>
         </div>
