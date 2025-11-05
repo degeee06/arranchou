@@ -22,18 +22,24 @@ const AdminPersonalAttendance: React.FC<{
   attendance: Attendance;
   onToggle: (day: DayKey) => void;
 }> = ({ profile, attendance, onToggle }) => {
+    const jsTodayIndex = new Date().getDay();
+    const todayIndex = jsTodayIndex === 0 ? 6 : jsTodayIndex - 1;
+
     return (
         <section className="bg-gray-800 rounded-lg shadow p-4 sm:p-6 mb-6">
             <h2 className="text-xl font-bold mb-4 text-gray-200">Minha Presença</h2>
             <div className="flex flex-wrap justify-center gap-3">
                 {DAYS_OF_WEEK.map((day) => {
+                    const dayIndex = DAYS_OF_WEEK.indexOf(day);
+                    const isPast = dayIndex < todayIndex;
                     const status = attendance[profile.id]?.[day];
                     return (
-                        <div key={day} className="text-center p-3 rounded-md w-24 bg-gray-700">
+                        <div key={day} className={`text-center p-3 rounded-md w-24 ${isPast ? 'bg-gray-700/50 opacity-60' : 'bg-gray-700'}`}>
                             <p className="font-semibold text-sm text-white">{day}</p>
                              <button
                                 onClick={() => onToggle(day)}
-                                className={`mt-3 p-2 w-full flex justify-center rounded-full transition-all duration-200 transform active:scale-95 ${
+                                disabled={isPast}
+                                className={`mt-3 p-2 w-full flex justify-center rounded-full transition-all duration-200 transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-70 ${
                                     status === true
                                     ? 'bg-green-900 text-green-300 hover:bg-green-800'
                                     : status === false
@@ -55,7 +61,6 @@ const AdminPersonalAttendance: React.FC<{
 
 const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance, setAttendanceRecords, currentWeekId, isAdmin, adminProfile }) => {
   const jsTodayIndex = new Date().getDay(); // 0 for Sunday, 1 for Monday...
-  // A linha abaixo foi mantida por consistência, mas não é mais usada para bloquear datas para administradores.
   const todayIndex = jsTodayIndex === 0 ? 6 : jsTodayIndex - 1; 
   
   const [currentDay, setCurrentDay] = useState<DayKey>(DAYS_OF_WEEK[todayIndex]);
@@ -66,12 +71,17 @@ const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance,
   const [isSearchVisible, setIsSearchVisible] = useState(false);
 
   const handleToggleAttendance = async (personId: string, day: DayKey) => {
-    // CORREÇÃO: Removida qualquer verificação de data para administradores, permitindo edição de dias passados e futuros.
+    const dayIndex = DAYS_OF_WEEK.indexOf(day);
+    if (dayIndex < todayIndex) {
+        alert("Não é possível alterar o status de dias que já passaram.");
+        return;
+    }
+    
     const currentStatus = attendance[personId]?.[day];
     
-    // Ciclo: indefinido -> presente -> ausente -> indefinido (deletando)
+    // Cycle: undefined -> true -> false -> undefined (by deleting)
     if (currentStatus === undefined) {
-      // Marcar como presente
+      // Set to present
       const { error } = await supabase.from('attendances').upsert(
         { user_id: personId, week_id: currentWeekId, day, is_present: true },
         { onConflict: 'user_id,week_id,day' }
@@ -82,7 +92,7 @@ const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance,
       }
       setAttendanceRecords(prev => [...prev.filter(r => !(r.user_id === personId && r.week_id === currentWeekId && r.day === day)), { user_id: personId, week_id: currentWeekId, day, is_present: true }]);
     } else if (currentStatus === true) {
-      // Marcar como ausente
+      // Set to absent
       const { error } = await supabase.from('attendances').upsert(
         { user_id: personId, week_id: currentWeekId, day, is_present: false },
         { onConflict: 'user_id,week_id,day' }
@@ -93,7 +103,7 @@ const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance,
       }
       setAttendanceRecords(prev => prev.map(r => (r.user_id === personId && r.week_id === currentWeekId && r.day === day) ? { ...r, is_present: false } : r));
     } else {
-      // Marcar como não definido (deletando o registro)
+      // Set to not marked by deleting the record
       const { error } = await supabase.from('attendances').delete().match({ user_id: personId, week_id: currentWeekId, day });
       if (error) {
         alert("Erro ao atualizar presença.");
