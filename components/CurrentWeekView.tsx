@@ -55,6 +55,7 @@ const AdminPersonalAttendance: React.FC<{
 
 const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance, setAttendanceRecords, currentWeekId, isAdmin, adminProfile }) => {
   const jsTodayIndex = new Date().getDay(); // 0 for Sunday, 1 for Monday...
+  // A linha abaixo foi mantida por consistência, mas não é mais usada para bloquear datas para administradores.
   const todayIndex = jsTodayIndex === 0 ? 6 : jsTodayIndex - 1; 
   
   const [currentDay, setCurrentDay] = useState<DayKey>(DAYS_OF_WEEK[todayIndex]);
@@ -65,12 +66,12 @@ const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance,
   const [isSearchVisible, setIsSearchVisible] = useState(false);
 
   const handleToggleAttendance = async (personId: string, day: DayKey) => {
-    // FIX: Removed date check for admins to allow editing any day.
+    // CORREÇÃO: Removida qualquer verificação de data para administradores, permitindo edição de dias passados e futuros.
     const currentStatus = attendance[personId]?.[day];
     
-    // Cycle: undefined -> true -> false -> undefined (by deleting)
+    // Ciclo: indefinido -> presente -> ausente -> indefinido (deletando)
     if (currentStatus === undefined) {
-      // Set to present
+      // Marcar como presente
       const { error } = await supabase.from('attendances').upsert(
         { user_id: personId, week_id: currentWeekId, day, is_present: true },
         { onConflict: 'user_id,week_id,day' }
@@ -81,7 +82,7 @@ const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance,
       }
       setAttendanceRecords(prev => [...prev.filter(r => !(r.user_id === personId && r.week_id === currentWeekId && r.day === day)), { user_id: personId, week_id: currentWeekId, day, is_present: true }]);
     } else if (currentStatus === true) {
-      // Set to absent
+      // Marcar como ausente
       const { error } = await supabase.from('attendances').upsert(
         { user_id: personId, week_id: currentWeekId, day, is_present: false },
         { onConflict: 'user_id,week_id,day' }
@@ -92,7 +93,7 @@ const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance,
       }
       setAttendanceRecords(prev => prev.map(r => (r.user_id === personId && r.week_id === currentWeekId && r.day === day) ? { ...r, is_present: false } : r));
     } else {
-      // Set to not marked by deleting the record
+      // Marcar como não definido (deletando o registro)
       const { error } = await supabase.from('attendances').delete().match({ user_id: personId, week_id: currentWeekId, day });
       if (error) {
         alert("Erro ao atualizar presença.");
