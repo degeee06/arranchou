@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { GoogleGenAI, Type } from '@google/genai';
 import { supabase } from '../supabase';
 import { PredictionResult, AttendanceRecord, DayKey } from '../types';
 import { getReadableWeekRange } from '../utils';
@@ -14,9 +13,19 @@ const PredictiveAnalysisView: React.FC = () => {
         const [yearStr, weekStr] = lastWeekId.split('-W');
         let year = parseInt(yearStr, 10);
         let week = parseInt(weekStr, 10);
-        if (week === 52 || week === 53) { // Simplified week rollover logic
-            week = 1;
-            year += 1;
+        if (week >= 52) { // Logic to handle year rollover
+            const d = new Date(year, 11, 28); // Check last week of the year
+            const yearEndWeek = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+            yearEndWeek.setUTCDate(yearEndWeek.getUTCDate() + 4 - (yearEndWeek.getUTCDay() || 7));
+            const yearStart = new Date(Date.UTC(yearEndWeek.getUTCFullYear(), 0, 1));
+            const weekNo = Math.ceil((((yearEndWeek.valueOf() - yearStart.valueOf()) / 86400000) + 1) / 7);
+            
+            if(week >= weekNo) {
+              week = 1;
+              year += 1;
+            } else {
+              week += 1;
+            }
         } else {
             week += 1;
         }
@@ -55,60 +64,52 @@ const PredictiveAnalysisView: React.FC = () => {
             const lastWeekId = Object.keys(dailyCounts).reduce((latest, key) => key > latest ? key : latest, '').split(',')[0];
             const nextWeekId = getNextWeekId(lastWeekId);
                 
-            // 3. Call AI
+            // 3. Call DeepSeek AI
             if (!process.env.API_KEY) {
-                throw new Error("A chave de API não foi configurada. Verifique o arquivo .env e a configuração do Vite.");
+                throw new Error("A chave de API DEEPSEEK_API_KEY não foi configurada. Verifique o arquivo .env e a configuração do Vite.");
             }
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-            const schema = {
-                type: Type.OBJECT,
-                properties: {
-                    predictions: {
-                        type: Type.ARRAY,
-                        description: 'Previsão de presenças para cada dia da próxima semana.',
-                        items: {
-                            type: Type.OBJECT,
-                            properties: {
-                                day: { type: Type.STRING },
-                                predicted_attendees: { type: Type.INTEGER }
-                            },
-                            required: ['day', 'predicted_attendees']
-                        }
-                    },
-                    insight: { type: Type.STRING, description: 'Um insight acionável para o gerente do refeitório, com no máximo 2 frases.' }
-                },
-                required: ['predictions', 'insight']
-            };
-
-            const prompt = `
-                Você é um analista de dados especialista em otimização de recursos para refeitórios. Sua tarefa é analisar o histórico de presença e prever a demanda para a próxima semana (${nextWeekId}).
-
-                Contexto:
-                - Os dados mostram o total de pessoas presentes por dia em cada semana.
-                - O ID da semana está no formato 'ANO-WNUMERO'.
-                - A próxima semana para a qual você deve prever é a ${nextWeekId}.
-
-                Dados Históricos (formato CSV):
-                ${csvData}
-
-                Com base nos dados, realize as seguintes tarefas:
-                1. Calcule a previsão de presenças para cada um dos 7 dias da semana ${nextWeekId}.
-                2. Forneça um insight acionável para o gerente, com no máximo 2 frases, para ajudar a otimizar o planejamento.
-                3. Retorne sua análise estritamente no formato JSON especificado. Não adicione nenhum texto, formatação ou markdown fora do JSON.
-            `;
             
-            const response = await ai.models.generateContent({
-               model: "gemini-2.5-flash",
-               contents: prompt,
-               config: {
-                 responseMimeType: "application/json",
-                 responseSchema: schema,
-                 temperature: 0.2
-               },
+            const systemPrompt = `Você é um analista de dados especialista em otimização de recursos para refeitórios. Sua tarefa é analisar dados históricos de presença e prever a demanda futura. Você deve retornar sua análise estritamente no formato JSON, sem nenhum texto, formatação ou markdown adicional.`;
+
+            const userPrompt = `
+Contexto:
+- Os dados a seguir mostram o total de pessoas presentes por dia em cada semana.
+- O ID da semana está no formato 'ANO-WNUMERO'.
+- A próxima semana para a qual você deve prever é a ${nextWeekId}.
+
+Dados Históricos (formato CSV):
+${csvData}
+
+Com base nos dados, realize as seguintes tarefas:
+1. Calcule a previsão de presenças para cada um dos 7 dias da semana ${nextWeekId}. O campo "day" no JSON deve ser o nome do dia em português ('Segunda', 'Terça', etc.).
+2. Forneça um insight acionável para o gerente, com no máximo 2 frases, para ajudar a otimizar o planejamento.
+3. A resposta DEVE ser um objeto JSON com a seguinte estrutura: { "predictions": [{ "day": "NomeDoDia", "predicted_attendees": numero }, ...], "insight": "Seu insight aqui" }.
+`;
+
+            const apiResponse = await fetch('https://api.deepseek.com/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${process.env.API_KEY}`
+                },
+                body: JSON.stringify({
+                    model: 'deepseek-chat',
+                    messages: [
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: userPrompt }
+                    ],
+                    temperature: 0.2,
+                    response_format: { type: 'json_object' }
+                })
             });
 
-            const responseText = response.text.trim();
+            if (!apiResponse.ok) {
+                const errorBody = await apiResponse.json();
+                throw new Error(`Erro da API DeepSeek: ${errorBody.error?.message || apiResponse.statusText}`);
+            }
+
+            const result = await apiResponse.json();
+            const responseText = result.choices[0].message.content;
             const parsedJson = JSON.parse(responseText);
             
             // Basic validation
