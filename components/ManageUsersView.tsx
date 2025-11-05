@@ -62,22 +62,47 @@ const ManageUsersView: React.FC<ManageUsersViewProps> = ({ profiles, setProfiles
   
   const handleRemoveUser = async () => {
     if (!removeConfirm) return;
-    
+
     setLoading(prev => ({ ...prev, [removeConfirm.id]: true }));
     setError(null);
 
-    const { error: functionError } = await supabase.functions.invoke('delete-user', {
-        body: { user_id: removeConfirm.id },
-    });
+    try {
+      // FIX: To prevent re-registration errors, we first update the profile of the user
+      // being deleted to change their unique 'employee_id' to a non-conflicting value.
+      // This frees up the original 'employee_id' for future use. The old profile record
+      // may remain as an orphan if the backend function doesn't cascade deletes, but it will
+      // no longer cause a unique constraint violation.
+      const anonymizedEmployeeId = `deleted_${removeConfirm.id}`;
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ employee_id: anonymizedEmployeeId })
+        .eq('id', removeConfirm.id);
 
-    if (functionError) {
-        console.error('Error deleting user:', functionError);
-        setError(`Falha ao remover usuário: ${functionError.message}`);
-    } else {
-        setProfiles(prevProfiles => prevProfiles.filter(p => p.id !== removeConfirm.id));
-        setRemoveConfirm(null);
+      if (updateError) {
+        throw new Error(`Falha ao desvincular o crachá do usuário. A remoção foi cancelada. Detalhes: ${updateError.message}`);
+      }
+      
+      // Now that the unique key is free, proceed with invoking the function to delete the auth user.
+      const { error: functionError } = await supabase.functions.invoke('delete-user', {
+          body: { user_id: removeConfirm.id },
+      });
+
+      if (functionError) {
+          // If this fails, the user is in a state where their profile is anonymized but their auth account still exists.
+          // They can still log in, but their employee ID will look strange. This is a recoverable state for an admin.
+          throw new Error(`A conta de autenticação não pôde ser removida. O usuário foi anonimizado como medida de segurança. Detalhes: ${functionError.message}`);
+      }
+
+      // On full success, remove the user from the local state.
+      setProfiles(prevProfiles => prevProfiles.filter(p => p.id !== removeConfirm.id));
+      setRemoveConfirm(null);
+
+    } catch (err: any) {
+        console.error('Error during user removal process:', err);
+        setError(err.message || 'Ocorreu um erro desconhecido durante a remoção.');
+    } finally {
+        setLoading(prev => ({ ...prev, [removeConfirm.id]: false }));
     }
-    setLoading(prev => ({ ...prev, [removeConfirm.id]: false }));
   };
   
   const sortedProfiles = [...profiles].sort((a, b) => {
