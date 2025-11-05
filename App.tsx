@@ -40,8 +40,19 @@ function App() {
         .from('profiles')
         .select('*')
         .eq('id', currentSession.user.id)
-        .single();
+        .maybeSingle(); // Use maybeSingle() to prevent error on missing profile
       if (profileError) throw profileError;
+
+      // If the user is logged in but has no profile, it's an inconsistent state.
+      // Log them out and prompt them to contact support or re-register.
+      if (!userProfileData) {
+        console.error(`Inconsistent state: User ${currentSession.user.id} authenticated but profile is missing.`);
+        alert("Erro: Seu perfil não foi encontrado. Por favor, tente se cadastrar novamente ou contate o suporte. Você será desconectado.");
+        await supabase.auth.signOut();
+        setLoading(false); // Ensure loading state is turned off
+        return; // Stop execution
+      }
+
 
       // The userProfileData fetched directly from the database IS the source of truth.
       // No need to check session metadata which can be stale.
