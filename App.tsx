@@ -70,11 +70,13 @@ function App() {
         setProfiles([userProfileData]);
       }
 
-      const { data: allAttendances, error: attendancesError } = await supabase
+      // Performance Optimization: Fetch only the current week's attendance records.
+      const { data: currentWeekAttendances, error: attendancesError } = await supabase
         .from('attendances')
-        .select('*');
+        .select('*')
+        .eq('week_id', currentWeekId);
       if (attendancesError) throw attendancesError;
-      setAttendanceRecords(allAttendances);
+      setAttendanceRecords(currentWeekAttendances);
 
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -82,7 +84,7 @@ function App() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [currentWeekId]);
 
   // Auth listener
   useEffect(() => {
@@ -228,7 +230,7 @@ function App() {
                 adminProfile={profile}
               />
             )}
-            {view === 'history' && <HistoryView allProfiles={profiles} allAttendances={attendanceRecords} />}
+            {view === 'history' && <HistoryView allProfiles={profiles} />}
             {view === 'manage_users' && (
               <ManageUsersView
                 profiles={profiles}
