@@ -1,4 +1,4 @@
-const CACHE_NAME = 'arranchou-cache-v1';
+const CACHE_NAME = 'arranchou-cache-v2';
 const APP_SHELL_URLS = [
   '/',
   '/index.html',
