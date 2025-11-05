@@ -2,7 +2,7 @@ const CACHE_NAME = 'arranchou-cache-v1';
 const APP_SHELL_URLS = [
   '/',
   '/index.html',
-  '/index.tsx',
+  '/index.css',
   '/manifest.json',
   '/icon.svg'
 ];
