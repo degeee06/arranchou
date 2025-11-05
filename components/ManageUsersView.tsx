@@ -60,50 +60,40 @@ const ManageUsersView: React.FC<ManageUsersViewProps> = ({ profiles, setProfiles
     setLoading(prev => ({ ...prev, [person.id]: false }));
   };
   
-  const handleRemoveUser = async () => {
+const handleRemoveUser = async () => {
     if (!removeConfirm) return;
 
-    setLoading(prev => ({ ...prev, [removeConfirm.id]: true }));
+    const userToDelete = removeConfirm; // Capture the user object to use in `finally`
+
+    setLoading(prev => ({ ...prev, [userToDelete.id]: true }));
     setError(null);
 
     try {
-      // FIX: To prevent re-registration errors, we first update the profile of the user
-      // being deleted to change their unique 'employee_id' to a non-conflicting value.
-      // This frees up the original 'employee_id' for future use. The old profile record
-      // may remain as an orphan if the backend function doesn't cascade deletes, but it will
-      // no longer cause a unique constraint violation.
-      const anonymizedEmployeeId = `deleted_${removeConfirm.id}`;
-      const { error: updateError } = await supabase
-        .from('profiles')
-        .update({ employee_id: anonymizedEmployeeId })
-        .eq('id', removeConfirm.id);
-
-      if (updateError) {
-        throw new Error(`Falha ao desvincular o crachá do usuário. A remoção foi cancelada. Detalhes: ${updateError.message}`);
-      }
-      
-      // Now that the unique key is free, proceed with invoking the function to delete the auth user.
+      // Directly invoke the function to delete the auth user.
+      // This is expected to trigger a cascade delete on the 'profiles' table and other related data,
+      // ensuring a complete and permanent removal of the user from the system.
       const { error: functionError } = await supabase.functions.invoke('delete-user', {
-          body: { user_id: removeConfirm.id },
+          body: { user_id: userToDelete.id },
       });
 
       if (functionError) {
-          // If this fails, the user is in a state where their profile is anonymized but their auth account still exists.
-          // They can still log in, but their employee ID will look strange. This is a recoverable state for an admin.
-          throw new Error(`A conta de autenticação não pôde ser removida. O usuário foi anonimizado como medida de segurança. Detalhes: ${functionError.message}`);
+          // If the function fails, inform the admin. The user is not deleted.
+          throw new Error(`A remoção falhou. A conta de autenticação do usuário não pôde ser removida. Detalhes: ${functionError.message}`);
       }
 
-      // On full success, remove the user from the local state.
-      setProfiles(prevProfiles => prevProfiles.filter(p => p.id !== removeConfirm.id));
+      // On success, the realtime subscription in App.tsx will eventually remove the user
+      // from the UI state. We also update it here for immediate feedback.
+      setProfiles(prevProfiles => prevProfiles.filter(p => p.id !== userToDelete.id));
       setRemoveConfirm(null);
 
     } catch (err: any) {
         console.error('Error during user removal process:', err);
         setError(err.message || 'Ocorreu um erro desconhecido durante a remoção.');
     } finally {
-        setLoading(prev => ({ ...prev, [removeConfirm.id]: false }));
+        setLoading(prev => ({ ...prev, [userToDelete.id]: false }));
     }
-  };
+};
+
   
   const sortedProfiles = [...profiles].sort((a, b) => {
     const roleOrder = { super_admin: 0, admin: 1, employee: 2 };
@@ -223,7 +213,7 @@ const ManageUsersView: React.FC<ManageUsersViewProps> = ({ profiles, setProfiles
                 Tem certeza que deseja remover permanentemente <strong>{removeConfirm?.full_name}</strong>?
             </p>
             <p className="text-sm text-red-400 mt-2 font-semibold">
-                Esta ação é irreversível. O usuário e todos os seus dados de presença serão apagados do sistema.
+                Esta ação é irreversível. A conta do usuário (login e senha) e todos os seus dados de presença serão apagados permanentemente. Para acessar o sistema novamente, o usuário precisará criar uma nova conta.
             </p>
             <div className="mt-6 flex justify-end gap-3">
                 <button onClick={() => setRemoveConfirm(null)} type="button" className="px-4 py-2 text-sm font-medium text-gray-200 bg-gray-600 border border-gray-500 rounded-md shadow-sm hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-white">
