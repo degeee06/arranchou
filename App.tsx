@@ -28,26 +28,54 @@ function App() {
         .from('profiles')
         .select('*')
         .eq('id', currentSession.user.id)
-        .maybeSingle(); // Use maybeSingle() to prevent error on missing profile
+        .maybeSingle();
       if (profileError) throw profileError;
 
-      // If the user is logged in but has no profile, it's an inconsistent state.
-      // Log them out and prompt them to contact support or re-register.
-      if (!userProfileData) {
-        console.error(`Inconsistent state: User ${currentSession.user.id} authenticated but profile is missing.`);
-        alert("Erro: Seu perfil não foi encontrado. Por favor, tente se cadastrar novamente ou contate o suporte. Você será desconectado.");
-        await supabase.auth.signOut();
-        setLoading(false); // Ensure loading state is turned off
-        return; // Stop execution
+      let currentProfile = userProfileData;
+
+      // Handle new user sign-up: profile needs to be created in a second step.
+      if (!currentProfile) {
+        const pendingProfileJSON = localStorage.getItem('pending_profile_data');
+        if (pendingProfileJSON) {
+          localStorage.removeItem('pending_profile_data'); // Consume the item to prevent re-creation
+          try {
+            const pendingProfile = JSON.parse(pendingProfileJSON);
+            console.log("No profile found for new user, creating one now:", currentSession.user.id);
+            
+            const { data: newProfile, error: insertError } = await supabase
+              .from('profiles')
+              .insert({
+                id: currentSession.user.id,
+                full_name: pendingProfile.full_name,
+                badge_number: pendingProfile.badge_number,
+                // role defaults to 'employee' in the database schema
+              })
+              .select()
+              .single();
+
+            if (insertError) {
+              alert(`Falha ao finalizar o cadastro e criar seu perfil: ${insertError.message}. Você será desconectado.`);
+              await supabase.auth.signOut();
+              return; // Stop execution
+            }
+            currentProfile = newProfile; // Assign the newly created profile to continue the flow
+          } catch (e) {
+            alert("Ocorreu um erro ao finalizar seu cadastro. Você será desconectado.");
+            await supabase.auth.signOut();
+            return; // Stop execution
+          }
+        } else {
+          // This is a true inconsistent state: user is logged in but has no profile, and it wasn't a sign-up flow.
+          alert("Erro: Seu perfil não foi encontrado. Você será desconectado.");
+          await supabase.auth.signOut();
+          return; // Stop execution
+        }
       }
+      
+      // If we've reached here, currentProfile is valid (either fetched or newly created)
+      setProfile(currentProfile);
 
-
-      // The userProfileData fetched directly from the database IS the source of truth.
-      // No need to check session metadata which can be stale.
-      setProfile(userProfileData);
-
-
-      if (userProfileData.role === 'admin' || userProfileData.role === 'super_admin') {
+      if (currentProfile.role === 'admin' || currentProfile.role === 'super_admin') {
         const { data: allProfiles, error: profilesError } = await supabase
           .from('profiles')
           .select('*')
@@ -55,7 +83,7 @@ function App() {
         if (profilesError) throw profilesError;
         setProfiles(allProfiles);
       } else {
-        setProfiles([userProfileData]);
+        setProfiles([currentProfile]);
       }
 
       // Fetch all attendance records. Realtime will keep it in sync.

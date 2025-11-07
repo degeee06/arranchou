@@ -16,24 +16,35 @@ const AuthView: React.FC = () => {
         setError(null);
         setMessage(null);
 
+        // Clean up any stale data from previous attempts
+        localStorage.removeItem('pending_profile_data');
+
         // Generate a consistent, fake email from the badge number for Supabase Auth
         const email = `employee_${badgeNumber}@arranchou.app`;
 
         try {
             if (isSignUp) {
+                // Step 1: Store profile data in localStorage to be picked up by App.tsx
+                // after the auth state changes.
+                localStorage.setItem('pending_profile_data', JSON.stringify({
+                    full_name: fullName,
+                    badge_number: badgeNumber,
+                }));
+
+                // Step 2: Sign up the user in Supabase Auth without profile metadata.
+                // This decouples auth user creation from profile table insertion,
+                // making it more resilient to RLS policies or trigger failures.
                 const { error } = await supabase.auth.signUp({
                     email,
                     password,
-                    options: {
-                        data: {
-                            full_name: fullName,
-                            badge_number: badgeNumber,
-                            role: 'employee',
-                        }
-                    }
                 });
-                if (error) throw error;
-                setMessage('Cadastro realizado com sucesso! Você já pode entrar.');
+                
+                if (error) {
+                    throw error; // Let the catch block handle it
+                }
+                
+                // The onAuthStateChange listener in App.tsx will now handle creating the profile.
+                setMessage('Cadastro realizado com sucesso! Se a confirmação de email estiver habilitada, por favor, verifique sua caixa de entrada para ativar a conta.');
             } else {
                 const { error } = await supabase.auth.signInWithPassword({
                     email,
@@ -43,57 +54,19 @@ const AuthView: React.FC = () => {
                 // Login will be handled by the listener in App.tsx
             }
         } catch (err: any) {
-            console.error("Auth Error:", err.message);
+            console.error("Auth Error:", err);
+            // Always clean up localStorage on any error during the process
+            localStorage.removeItem('pending_profile_data');
 
             if (err.message.includes("Invalid login credentials")) {
                 setError("Nº do Crachá ou senha inválidos.");
-            } else if (err.message.includes('profiles_badge_number_key')) {
-                // This is the new, more robust check for the UNIQUE constraint on the database.
-                setError("Este Nº do Crachá já está cadastrado. Tente um número diferente ou faça login.");
             } else if (err.message.includes("User already registered")) {
-                console.warn("User already exists in auth, but maybe not in profiles. Attempting login to recover.");
-                // This is our recovery logic for orphan auth users.
-                // If sign-up fails because the user exists, we try to sign in.
-                // If sign-in succeeds, it means their profile was missing. We recreate it.
-                try {
-                    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-                        email,
-                        password,
-                    });
-                    if (signInError) {
-                        // If sign-in fails here, it's a genuine wrong password for an existing user.
-                        setError("Este Nº do Crachá já está cadastrado. Se você já tem uma conta, a senha informada está incorreta.");
-                        return; // Stop execution
-                    }
-                    
-                    if (signInData.user) {
-                         // Sign-in successful, now check if profile exists before creating
-                        const { data: existingProfile } = await supabase.from('profiles').select('id').eq('id', signInData.user.id).single();
-                        
-                        if (!existingProfile) {
-                            const { error: profileError } = await supabase.from('profiles').insert({
-                                id: signInData.user.id,
-                                full_name: fullName,
-                                badge_number: badgeNumber,
-                                role: 'employee'
-                            });
-
-                            if (profileError) {
-                                console.error("Failed to recreate profile for orphan user:", profileError);
-                                setError("Falha ao recuperar conta. Tente novamente mais tarde.");
-                            } else {
-                                console.log("Successfully recovered and recreated profile for user:", signInData.user.id);
-                                // The onAuthStateChange listener will handle the successful login
-                            }
-                        } else {
-                           // This case is rare, but means the profile exists and the user should just log in.
-                           // The login already succeeded, so the listener will handle it.
-                           console.log("User has an auth entry and a profile. Login will proceed.");
-                        }
-                    }
-                } catch (recoveryErr: any) {
-                    setError("Ocorreu um erro inesperado durante a recuperação da conta. Tente fazer login.");
-                }
+                setError("Este email (derivado do Nº do Crachá) já está em uso. Tente fazer login ou use um Nº de Crachá diferente.");
+            } else if (err.message.includes('profiles_badge_number_key')) {
+                // This error comes from the database if the profile insert fails due to a unique constraint violation.
+                setError("Este Nº do Crachá já está cadastrado. Tente um número diferente ou faça login.");
+            } else if (err instanceof TypeError && err.message.includes('Failed to fetch')) {
+                 setError("Falha de conexão com o servidor. Verifique sua internet ou se um bloqueador de anúncios está ativo.");
             }
             else {
                 setError(err.error_description || err.message);
