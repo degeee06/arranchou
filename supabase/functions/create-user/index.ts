@@ -4,15 +4,14 @@ declare const Deno: any;
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/cors.ts';
 
-// This function is our entry point.
 Deno.serve(async (req) => {
-  // Handle CORS preflight requests
+  // ✅ 1. Responde imediatamente a preflight (CORS)
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   try {
-    // 1. Extract new employee data from the request body.
+    // ✅ 2. Extrai dados enviados pelo frontend
     const { fullName, badgeNumber, password } = await req.json();
     if (!fullName || !badgeNumber || !password) {
       return new Response(JSON.stringify({ error: 'Dados incompletos fornecidos.' }), {
@@ -21,21 +20,26 @@ Deno.serve(async (req) => {
       });
     }
 
-    // 2. Create a Supabase client to verify the caller's role (the admin).
-    // It uses the Authorization token sent by the frontend to authenticate.
+    // ✅ 3. Captura o Authorization header (se existir)
+    const authHeader = req.headers.get('Authorization') || '';
+
+    // ✅ 4. Cria o cliente do Supabase com o token do usuário
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
+      { global: { headers: { Authorization: authHeader } } }
     );
 
-    // 3. Get the data of the user making the call (the admin).
-    const { data: { user } } = await supabaseClient.auth.getUser();
-    if (!user) {
-      throw new Error("Usuário não autenticado.");
+    // ✅ 5. Verifica o usuário autenticado
+    const { data: { user }, error: userError } = await supabaseClient.auth.getUser();
+    if (userError || !user) {
+      return new Response(JSON.stringify({ error: 'Usuário não autenticado.' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 401,
+      });
     }
 
-    // 4. SECURITY CHECK: Confirm that the user is an admin.
+    // ✅ 6. Checa se é admin
     const { data: adminProfile, error: profileError } = await supabaseClient
       .from('profiles')
       .select('role')
@@ -45,43 +49,40 @@ Deno.serve(async (req) => {
     if (profileError || adminProfile?.role !== 'admin') {
       return new Response(JSON.stringify({ error: 'Acesso negado. Apenas administradores podem criar usuários.' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 401, // 401 Unauthorized
+        status: 403,
       });
     }
-    
-    // 5. If the check passes, create the ADMIN client with superpowers (service_role).
-    // It's safe to use the service_role_key here because this code runs on Supabase's server.
+
+    // ✅ 7. Usa o service_role para criar o novo usuário
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
-    
-    // 6. Create the new user in Supabase Auth.
+
     const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
       email: `${badgeNumber}@lunchapp.local`,
-      password: password,
+      password,
       user_metadata: {
         full_name: fullName,
         badge_number: badgeNumber
       },
-      email_confirm: true, // Mark the email as confirmed right away.
+      email_confirm: true,
     });
 
     if (createError) {
-      // If the error is because the user already exists, return a friendly message.
       if (createError.message.includes('unique constraint') || createError.message.includes('should be unique')) {
         return new Response(JSON.stringify({ error: 'Um usuário com este crachá já existe.' }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 409, // 409 Conflict
+          status: 409,
         });
       }
-      throw createError; // Throw other errors.
+      throw createError;
     }
 
-    // 7. Return a success response.
+    // ✅ 8. Retorna sucesso
     return new Response(JSON.stringify({ user: newUser }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 201, // 201 Created
+      status: 201,
     });
 
   } catch (error) {
