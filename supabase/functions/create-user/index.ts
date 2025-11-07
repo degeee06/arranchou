@@ -5,9 +5,10 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/cors.ts';
 
 Deno.serve(async (req) => {
-  // ✅ 1. Trata requisições OPTIONS (pré-flight CORS)
+  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+    // Fix: Use a 204 No Content response for preflight requests, which is more standard.
+    return new Response(null, { status: 204, headers: corsHeaders });
   }
 
   try {
