@@ -1,9 +1,6 @@
-
-
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../services/supabase';
-// Fix: Use imports from @supabase/auth-js as some versions of supabase-js do not export Session and User directly.
-import { Session, User } from '@supabase/auth-js';
+import { Session } from '@supabase/auth-js';
 import { Profile } from '../types';
 
 export function useAuth() {
@@ -11,54 +8,50 @@ export function useAuth() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchProfile = useCallback(async (user: User | null) => {
-    if (user) {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single();
-
-      if (error) {
-        console.error('Error fetching profile:', error);
-        setProfile(null);
-      } else {
-        setProfile(data);
-      }
-    } else {
-      setProfile(null);
-    }
-  }, []);
-
   useEffect(() => {
-    // onAuthStateChange fires an event immediately on page load with the initial session data.
-    // This single listener handles the initial session check, login, logout, and token refreshes.
-    // Fix: Cast to `any` to bypass incorrect V1 type definitions that cause a compilation error.
+    // Este efeito é executado apenas uma vez na montagem do componente para configurar o listener de autenticação.
     const { data: authListener } = (supabase.auth as any).onAuthStateChange(
       async (_event: string, session: Session | null) => {
-        try {
-          setSession(session);
-          await fetchProfile(session?.user ?? null);
-        } finally {
-          // This `finally` block ensures loading is set to false regardless of
-          // whether profile fetching succeeds or fails, fixing the infinite loop.
-          setLoading(false);
+        setSession(session);
+        
+        // Se uma sessão existir, busca o perfil do usuário.
+        if (session?.user) {
+          const { data, error } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
+
+          if (error) {
+            console.error('Error fetching profile:', error);
+            setProfile(null);
+          } else {
+            setProfile(data);
+          }
+        } else {
+          // Se não houver sessão, garante que o perfil seja nulo.
+          setProfile(null);
         }
+
+        // Independentemente do resultado, a verificação inicial de autenticação está completa.
+        // Finaliza o estado de carregamento. Esta é a parte crucial que impede o loop.
+        setLoading(false);
       }
     );
 
     return () => {
+      // Limpa o listener quando o componente é desmontado.
       authListener.subscription.unsubscribe();
     };
-  }, [fetchProfile]);
-  
+  }, []); // O array de dependências vazio garante que este efeito seja executado apenas UMA VEZ.
+
   const logout = async () => {
-      // Fix: Cast to `any` to bypass incorrect V1 type definitions that cause a compilation error.
       const { error } = await (supabase.auth as any).signOut();
       if (error) {
         console.error('Error logging out:', error.message);
       }
-      // The onAuthStateChange listener will handle all state updates automatically.
+      // O listener onAuthStateChange acima cuidará da atualização do estado automaticamente,
+      // definindo a sessão e o perfil como nulos.
   }
 
   return { session, profile, user: session?.user ?? null, loading, logout };
