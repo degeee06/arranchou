@@ -16,87 +16,66 @@ const AuthView: React.FC = () => {
         setError(null);
         setMessage(null);
 
-        // Generate a consistent, fake email from the employee ID for Supabase Auth
         const email = `employee_${employeeId}@arranchou.app`;
 
         try {
             if (isSignUp) {
-                const { error } = await supabase.auth.signUp({
+                // ETAPA 1: Criar o usuário no sistema de autenticação do Supabase.
+                const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
                     email,
                     password,
-                    options: {
-                        data: {
-                            full_name: fullName,
-                            employee_id: employeeId,
-                            role: 'employee',
-                        }
-                    }
                 });
-                if (error) throw error;
-                setMessage('Cadastro realizado com sucesso! Você já pode entrar.');
+
+                if (signUpError) {
+                    // Isso irá capturar erros como "User already registered".
+                    throw signUpError;
+                }
+                if (!signUpData.user) {
+                    throw new Error("O cadastro falhou, o usuário não foi criado na autenticação.");
+                }
+
+                // ETAPA 2: Com o usuário de autenticação criado, inserir o perfil na tabela `profiles`.
+                // Isso é essencial e garante que a conta do usuário esteja completa.
+                const { error: profileError } = await supabase.from('profiles').insert({
+                    id: signUpData.user.id, // Vincula o perfil ao usuário de autenticação
+                    full_name: fullName,
+                    employee_id: employeeId,
+                    role: 'employee'
+                });
+
+                if (profileError) {
+                    // Se a criação do perfil falhar, o usuário ficará em um estado inconsistente.
+                    // A lógica de recuperação abaixo ajudará se ele tentar se cadastrar novamente.
+                    console.error("ERRO CRÍTICO: A criação do perfil falhou após a criação do usuário de autenticação.", profileError);
+                    throw profileError; // Mostra o erro para o usuário (provavelmente um problema de RLS)
+                }
+
+                setMessage('Cadastro realizado com sucesso! Por favor, faça o login.');
+                setIsSignUp(false); // Muda para a tela de login para conveniência
+                setFullName('');
+                setEmployeeId('');
+                setPassword('');
+
             } else {
                 const { error } = await supabase.auth.signInWithPassword({
                     email,
                     password,
                 });
                 if (error) throw error;
-                // Login will be handled by the listener in App.tsx
+                // O login bem-sucedido será tratado pelo listener no App.tsx
             }
         } catch (err: any) {
-            console.error("Auth Error:", err.message);
-
+            console.error("Auth Error:", err);
+            
             if (err.message.includes("Invalid login credentials")) {
                 setError("Nº do Crachá ou senha inválidos.");
-            } else if (err.message.includes('profiles_employee_id_key')) {
-                // This is the new, more robust check for the UNIQUE constraint on the database.
+            } else if (err.message.includes('profiles_employee_id_key') || (err.details && err.details.includes('profiles_employee_id_key'))) {
                 setError("Este Nº do Crachá já está cadastrado. Tente um número diferente ou faça login.");
             } else if (err.message.includes("User already registered")) {
-                console.warn("User already exists in auth, but maybe not in profiles. Attempting login to recover.");
-                // This is our recovery logic for orphan auth users.
-                // If sign-up fails because the user exists, we try to sign in.
-                // If sign-in succeeds, it means their profile was missing. We recreate it.
-                try {
-                    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-                        email,
-                        password,
-                    });
-                    if (signInError) {
-                        // If sign-in fails here, it's a genuine wrong password for an existing user.
-                        setError("Este Nº do Crachá já está cadastrado. Se você já tem uma conta, a senha informada está incorreta.");
-                        return; // Stop execution
-                    }
-                    
-                    if (signInData.user) {
-                         // Sign-in successful, now check if profile exists before creating
-                        const { data: existingProfile } = await supabase.from('profiles').select('id').eq('id', signInData.user.id).single();
-                        
-                        if (!existingProfile) {
-                            const { error: profileError } = await supabase.from('profiles').insert({
-                                id: signInData.user.id,
-                                full_name: fullName,
-                                employee_id: employeeId,
-                                role: 'employee'
-                            });
-
-                            if (profileError) {
-                                console.error("Failed to recreate profile for orphan user:", profileError);
-                                setError("Falha ao recuperar conta. Tente novamente mais tarde.");
-                            } else {
-                                console.log("Successfully recovered and recreated profile for user:", signInData.user.id);
-                                // The onAuthStateChange listener will handle the successful login
-                            }
-                        } else {
-                           // This case is rare, but means the profile exists and the user should just log in.
-                           // The login already succeeded, so the listener will handle it.
-                           console.log("User has an auth entry and a profile. Login will proceed.");
-                        }
-                    }
-                } catch (recoveryErr: any) {
-                    setError("Ocorreu um erro inesperado durante a recuperação da conta. Tente fazer login.");
-                }
+                setError("Este Nº do Crachá já está cadastrado. Por favor, tente fazer o login.");
             }
             else {
-                setError(err.error_description || err.message);
+                setError(err.error_description || err.message || "Ocorreu um erro desconhecido.");
             }
         } finally {
             setLoading(false);
