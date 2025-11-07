@@ -1,8 +1,7 @@
-
 import React, { useState, useEffect, createContext, useContext, ReactNode } from 'react';
-import { Session, User } from '@supabase/supabase-js';
+import { Session } from '@supabase/supabase-js';
 import { supabase } from '../services/supabase';
-import { UserProfile, UserRole } from '../types';
+import { UserProfile } from '../types';
 
 interface AuthContextType {
   session: Session | null;
@@ -19,35 +18,43 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const getSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      setSession(session);
-      if (session?.user) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', session.user.id)
-          .single();
-        setUser(profile);
-      }
-      setLoading(false);
+    setLoading(true);
+
+    const fetchUserProfile = async (userSession: Session['user'] | null): Promise<UserProfile | null> => {
+        if (!userSession) return null;
+        try {
+            const { data: profile, error } = await supabase
+                .from('profiles')
+                .select('*')
+                .eq('id', userSession.id)
+                .single();
+            // PGRST116: No rows found. This is a valid state if the profile creation trigger is slow or failed.
+            if (error && error.code !== 'PGRST116') {
+                throw error;
+            }
+            return profile;
+        } catch (error) {
+            console.error('Error fetching user profile:', error);
+            return null;
+        }
     };
 
-    getSession();
-
-    const { data: authListener } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        setSession(session);
-         if (session?.user) {
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', session.user.id)
-            .single();
-          setUser(profile);
-        } else {
-            setUser(null);
+    // Get initial session and profile
+    supabase.auth.getSession().then(async ({ data: { session: initialSession } }) => {
+        setSession(initialSession);
+        if (initialSession) {
+            const profile = await fetchUserProfile(initialSession.user);
+            setUser(profile);
         }
+        setLoading(false);
+    });
+
+    // Listen for auth state changes
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      async (_event, newSession) => {
+        setSession(newSession);
+        const profile = await fetchUserProfile(newSession?.user ?? null);
+        setUser(profile);
       }
     );
 

@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { supabase } from '../services/supabase';
 import { Button, Input } from './ui';
@@ -18,24 +17,19 @@ const Auth: React.FC = () => {
 
     try {
       if (isLogin) {
-        // Supabase doesn't support sign-in with metadata directly.
-        // We fetch the email associated with the badge number first.
-        const { data: profile, error: profileError } = await supabase
-          .from('profiles')
-          .select('auth_email')
-          .eq('badge_number', badgeNumber)
-          .single();
-
-        if (profileError || !profile) {
-          throw new Error('Nº do Crachá ou senha inválidos.');
-        }
+        // Construct the email from the badge number, same as in sign-up
+        const email = `${badgeNumber}@arranchou.app`;
 
         const { error: signInError } = await supabase.auth.signInWithPassword({
-          email: profile.auth_email,
+          email: email,
           password,
         });
+        
+        // Make error generic to prevent user enumeration
+        if (signInError) {
+            throw new Error('Nº do Crachá ou senha inválidos.');
+        }
 
-        if (signInError) throw signInError;
       } else {
         // For sign-up, we generate a unique email from the badge number.
         const email = `${badgeNumber}@arranchou.app`;
