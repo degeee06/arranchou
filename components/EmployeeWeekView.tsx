@@ -34,7 +34,7 @@ const EmployeeWeekView: React.FC<EmployeeWeekViewProps> = ({ profile, attendance
             // DB operation
             const { error } = await supabase.from('attendances').delete().match({ user_id: profile.id, week_id: currentWeekId, day });
             if (error) {
-                alert("Erro ao salvar a alteração. A mudança foi revertida.");
+                alert("Falha ao salvar. A alteração foi desfeita. Verifique sua conexão com a internet. Se o problema persistir, pode ser uma questão de permissão no banco de dados (RLS).");
                 console.error("Falha ao deletar:", error);
                 setAttendanceRecords(originalRecords); // Rollback
             }
@@ -49,7 +49,7 @@ const EmployeeWeekView: React.FC<EmployeeWeekViewProps> = ({ profile, attendance
             ).select();
 
             if (error || !data || data.length === 0) {
-                alert("Erro ao salvar a alteração. A mudança foi revertida.");
+                alert("Falha ao salvar. A alteração foi desfeita. Verifique sua conexão com a internet. Se o problema persistir, pode ser uma questão de permissão no banco de dados (RLS).");
                 console.error("Falha no upsert (presente):", error, data);
                 setAttendanceRecords(originalRecords); // Rollback
             }

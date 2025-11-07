@@ -73,8 +73,8 @@ const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance,
 
   const handleToggleAttendance = async (personId: string, day: DayKey) => {
     const dayIndex = DAYS_OF_WEEK.indexOf(day);
-    if (dayIndex < todayIndex) {
-        alert("Não é possível alterar o status de dias que já passaram.");
+    if (dayIndex < todayIndex && personId !== adminProfile.id) { // Admin can change their own past days if needed, but not others
+        alert("Não é possível alterar o status de dias que já passaram para outros usuários.");
         return;
     }
     
@@ -93,7 +93,7 @@ const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance,
         ).select();
 
         if (error || !data || data.length === 0) {
-            alert("Erro ao salvar a alteração. A mudança foi revertida.");
+            alert("Falha ao salvar. A alteração foi desfeita. Verifique sua conexão com a internet. Se o problema persistir, pode ser uma questão de permissão no banco de dados (RLS).");
             console.error("Falha no upsert (presente):", error);
             setAttendanceRecords(originalRecords); // Rollback
         }
@@ -108,7 +108,7 @@ const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance,
         ).select();
         
         if (error || !data || data.length === 0) {
-            alert("Erro ao salvar a alteração. A mudança foi revertida.");
+            alert("Falha ao salvar. A alteração foi desfeita. Verifique sua conexão com a internet. Se o problema persistir, pode ser uma questão de permissão no banco de dados (RLS).");
             console.error("Falha no upsert (ausente):", error);
             setAttendanceRecords(originalRecords); // Rollback
         }
@@ -120,7 +120,7 @@ const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance,
         const { error } = await supabase.from('attendances').delete().match({ user_id: personId, week_id: currentWeekId, day });
         
         if (error) {
-            alert("Erro ao salvar a alteração. A mudança foi revertida.");
+            alert("Falha ao salvar. A alteração foi desfeita. Verifique sua conexão com a internet. Se o problema persistir, pode ser uma questão de permissão no banco de dados (RLS).");
             console.error("Falha ao deletar:", error);
             setAttendanceRecords(originalRecords); // Rollback
         }
@@ -167,7 +167,7 @@ const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance,
 
     // Check for errors
     if (originalResult.error || !originalResult.data || originalResult.data.length === 0 || substituteResult.error || !substituteResult.data || substituteResult.data.length === 0) {
-        alert("Erro ao salvar a substituição. A alteração foi revertida.");
+        alert("Falha ao salvar a substituição. A alteração foi desfeita. Verifique sua conexão e as permissões do banco de dados (RLS).");
         console.error("Erro na substituição:", { original: originalResult, substitute: substituteResult });
         setAttendanceRecords(originalRecords); // Rollback
     } else {
@@ -177,7 +177,7 @@ const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance,
   
   const filteredPeople = profiles.filter(person => {
     const query = searchQuery.toLowerCase();
-    return person.full_name.toLowerCase().includes(query) || person.employee_id.toLowerCase().includes(query);
+    return person.full_name.toLowerCase().includes(query) || (person.employee_id && person.employee_id.toLowerCase().includes(query));
   });
 
   return (
