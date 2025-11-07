@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { HistoryEntry, Profile, AttendanceRecord } from '../types';
@@ -10,36 +10,14 @@ import { Capacitor } from '@capacitor/core';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 import { getWeekId } from '../App';
-import { supabase } from '../supabase';
 
 interface HistoryViewProps {
   allProfiles: Profile[];
+  allAttendances: AttendanceRecord[];
 }
 
-const HistoryView: React.FC<HistoryViewProps> = ({ allProfiles }) => {
+const HistoryView: React.FC<HistoryViewProps> = ({ allProfiles, allAttendances }) => {
   const [loadingWeek, setLoadingWeek] = useState<string | null>(null);
-  const [allAttendances, setAllAttendances] = useState<AttendanceRecord[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  
-  useEffect(() => {
-    const fetchHistory = async () => {
-      try {
-        setIsLoading(true);
-        setError(null);
-        const { data, error } = await supabase.from('attendances').select('*');
-        if (error) throw error;
-        setAllAttendances(data);
-      } catch (err: any) {
-        console.error("Error fetching history:", err);
-        setError("Falha ao carregar o histórico de presenças.");
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchHistory();
-  }, []);
 
   const historyData: HistoryEntry[] = useMemo(() => {
     const groupedByWeek: { [weekId: string]: AttendanceRecord[] } = allAttendances.reduce((acc, record) => {
@@ -201,23 +179,6 @@ const generatePdf = async (weekData: HistoryEntry) => {
     setLoadingWeek(null);
   }
 };
-
-  if (isLoading) {
-    return (
-      <div className="text-center py-10 px-4 bg-gray-800 rounded-lg shadow">
-        <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-brand-primary mx-auto"></div>
-        <p className="text-gray-400 mt-4">Carregando histórico...</p>
-      </div>
-    );
-  }
-
-  if (error) {
-      return (
-        <div className="text-center py-10 px-4 bg-red-900/50 text-red-300 rounded-lg shadow">
-          <p>{error}</p>
-        </div>
-      );
-  }
 
   if (historyData.length === 0) {
     return (

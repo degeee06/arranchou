@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { supabase } from '../supabase';
-import { PredictionResult, AttendanceRecord, DayKey } from '../types';
+import { PredictionResult, DayKey } from '../types';
 import { getReadableWeekRange } from '../utils';
 import { ChartBarIcon } from './icons';
+// FIX: Import GoogleGenAI and Type for Gemini API integration.
+import { GoogleGenAI, Type } from '@google/genai';
 
 const PredictiveAnalysisView: React.FC = () => {
     const [loading, setLoading] = useState(false);
@@ -64,12 +66,14 @@ const PredictiveAnalysisView: React.FC = () => {
             const lastWeekId = Object.keys(dailyCounts).reduce((latest, key) => key > latest ? key : latest, '').split(',')[0];
             const nextWeekId = getNextWeekId(lastWeekId);
                 
-            // 3. Call DeepSeek AI
+            // FIX: Call Gemini AI instead of DeepSeek.
             if (!process.env.API_KEY) {
-                throw new Error("A chave de API DEEPSEEK_API_KEY não foi configurada. Verifique o arquivo .env e a configuração do Vite.");
+                throw new Error("A chave de API GEMINI_API_KEY não foi configurada. Verifique o arquivo .env e a configuração do Vite.");
             }
             
-            const systemPrompt = `Você é um analista de dados especialista em otimização de recursos para refeitórios. Sua tarefa é analisar dados históricos de presença e prever a demanda futura. Você deve retornar sua análise estritamente no formato JSON, sem nenhum texto, formatação ou markdown adicional.`;
+            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+            
+            const systemInstruction = `Você é um analista de dados especialista em otimização de recursos para refeitórios. Sua tarefa é analisar dados históricos de presença e prever a demanda futura. Você deve retornar sua análise estritamente no formato JSON, sem nenhum texto, formatação ou markdown adicional.`;
 
             const userPrompt = `
 Contexto:
@@ -81,35 +85,44 @@ Dados Históricos (formato CSV):
 ${csvData}
 
 Com base nos dados, realize as seguintes tarefas:
-1. Calcule a previsão de presenças para cada um dos 7 dias da semana ${nextWeekId}. O campo "day" no JSON deve ser o nome do dia em português ('Segunda', 'Terça', etc.).
+1. Calcule a previsão de presenças para cada um dos 7 dias da semana ${nextWeekId}. O campo "day" no JSON deve ser o nome do dia em português ('Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo').
 2. Forneça um insight acionável para o gerente, com no máximo 2 frases, para ajudar a otimizar o planejamento.
 3. A resposta DEVE ser um objeto JSON com a seguinte estrutura: { "predictions": [{ "day": "NomeDoDia", "predicted_attendees": numero }, ...], "insight": "Seu insight aqui" }.
 `;
-
-            const apiResponse = await fetch('https://api.deepseek.com/v1/chat/completions', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${process.env.API_KEY}`
+            
+            const responseSchema = {
+              type: Type.OBJECT,
+              properties: {
+                predictions: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      day: { type: Type.STRING },
+                      predicted_attendees: { type: Type.INTEGER },
+                    },
+                    required: ['day', 'predicted_attendees'],
+                  },
                 },
-                body: JSON.stringify({
-                    model: 'deepseek-chat',
-                    messages: [
-                        { role: 'system', content: systemPrompt },
-                        { role: 'user', content: userPrompt }
-                    ],
+                insight: {
+                  type: Type.STRING,
+                },
+              },
+              required: ['predictions', 'insight'],
+            };
+
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: userPrompt,
+                config: {
+                    systemInstruction: systemInstruction,
                     temperature: 0.2,
-                    response_format: { type: 'json_object' }
-                })
+                    responseMimeType: 'application/json',
+                    responseSchema,
+                },
             });
 
-            if (!apiResponse.ok) {
-                const errorBody = await apiResponse.json();
-                throw new Error(`Erro da API DeepSeek: ${errorBody.error?.message || apiResponse.statusText}`);
-            }
-
-            const result = await apiResponse.json();
-            const responseText = result.choices[0].message.content;
+            const responseText = response.text.trim();
             const parsedJson = JSON.parse(responseText);
             
             // Basic validation

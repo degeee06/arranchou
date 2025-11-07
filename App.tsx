@@ -8,8 +8,7 @@ import CurrentWeekView from './components/CurrentWeekView';
 import HistoryView from './components/HistoryView';
 import EmployeeWeekView from './components/EmployeeWeekView';
 import ManageUsersView from './components/ManageUsersView';
-import PredictiveAnalysisView from './components/PredictiveAnalysisView';
-import { CalendarIcon, HistoryIcon, UsersIcon, ChartBarIcon } from './components/icons';
+import { CalendarIcon, HistoryIcon, UsersIcon } from './components/icons';
 
 // Function to get ISO week number (e.g., 2024-W42)
 export const getWeekId = (date: Date): string => {
@@ -32,7 +31,7 @@ function App() {
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentWeekId] = useState<string>(getWeekId(new Date()));
-  const [view, setView] = useState<'current' | 'history' | 'manage_users' | 'analytics'>('current');
+  const [view, setView] = useState<'current' | 'history' | 'manage_users'>('current');
 
   const fetchData = useCallback(async (currentSession: Session) => {
     try {
@@ -71,13 +70,12 @@ function App() {
         setProfiles([userProfileData]);
       }
 
-      // Performance Optimization: Fetch only the current week's attendance records.
-      const { data: currentWeekAttendances, error: attendancesError } = await supabase
+      // Fetch all attendance records. Realtime will keep it in sync.
+      const { data: allAttendances, error: attendancesError } = await supabase
         .from('attendances')
-        .select('*')
-        .eq('week_id', currentWeekId);
+        .select('*');
       if (attendancesError) throw attendancesError;
-      setAttendanceRecords(currentWeekAttendances);
+      setAttendanceRecords(allAttendances);
 
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -85,7 +83,7 @@ function App() {
     } finally {
       setLoading(false);
     }
-  }, [currentWeekId]);
+  }, []);
 
   // Auth listener
   useEffect(() => {
@@ -146,6 +144,44 @@ function App() {
       supabase.removeChannel(channel);
     };
   }, [profile]);
+
+  // Realtime listener for attendance changes
+  useEffect(() => {
+    if (!session) return;
+
+    const channel = supabase
+      .channel('attendances-changes')
+      .on<AttendanceRecord>(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'attendances' },
+        (payload) => {
+          // This real-time subscription ensures data consistency across sessions
+          // and synchronizes the state with the database, complementing optimistic updates.
+          if (payload.eventType === 'INSERT') {
+            // Add new record, removing any potential duplicates from optimistic updates.
+            setAttendanceRecords(prev => 
+              [...prev.filter(r => !(r.user_id === payload.new.user_id && r.week_id === payload.new.week_id && r.day === payload.new.day)), payload.new]
+            );
+          } else if (payload.eventType === 'UPDATE') {
+            setAttendanceRecords(prev =>
+              prev.map(r => (r.user_id === payload.new.user_id && r.week_id === payload.new.week_id && r.day === payload.new.day) ? payload.new : r)
+            );
+          } else if (payload.eventType === 'DELETE') {
+            const deletedRecord = payload.old as { user_id: string; week_id: string; day: DayKey };
+            if (deletedRecord.user_id && deletedRecord.week_id && deletedRecord.day) {
+                setAttendanceRecords(prev =>
+                  prev.filter(r => !(r.user_id === deletedRecord.user_id && r.week_id === deletedRecord.week_id && r.day === deletedRecord.day))
+                );
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [session]);
 
 
   const handleLogout = async () => {
@@ -208,12 +244,6 @@ function App() {
               >
                 <span className="flex items-center gap-2"><CalendarIcon /> <span className="hidden sm:inline">Semana Atual</span></span>
               </button>
-               <button
-                onClick={() => setView('analytics')}
-                className={`px-2 sm:px-4 py-2 font-semibold transition-colors ${view === 'analytics' ? 'text-brand-primary border-b-2 border-brand-primary' : 'text-gray-400'}`}
-              >
-                 <span className="flex items-center gap-2"><ChartBarIcon /> <span className="hidden sm:inline">Análise Preditiva</span></span>
-              </button>
               <button
                 onClick={() => setView('history')}
                 className={`px-2 sm:px-4 py-2 font-semibold transition-colors ${view === 'history' ? 'text-brand-primary border-b-2 border-brand-primary' : 'text-gray-400'}`}
@@ -237,8 +267,7 @@ function App() {
                 adminProfile={profile}
               />
             )}
-            {view === 'analytics' && <PredictiveAnalysisView />}
-            {view === 'history' && <HistoryView allProfiles={profiles} />}
+            {view === 'history' && <HistoryView allProfiles={profiles} allAttendances={attendanceRecords} />}
             {view === 'manage_users' && (
               <ManageUsersView
                 profiles={profiles}
