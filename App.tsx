@@ -8,7 +8,8 @@ import CurrentWeekView from './components/CurrentWeekView';
 import HistoryView from './components/HistoryView';
 import EmployeeWeekView from './components/EmployeeWeekView';
 import ManageUsersView from './components/ManageUsersView';
-import { CalendarIcon, HistoryIcon, UsersIcon } from './components/icons';
+import PredictiveAnalysisView from './components/PredictiveAnalysisView';
+import { CalendarIcon, HistoryIcon, UsersIcon, ChartBarIcon } from './components/icons';
 
 // Function to get ISO week number (e.g., 2024-W42)
 export const getWeekId = (date: Date): string => {
@@ -31,7 +32,7 @@ function App() {
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentWeekId] = useState<string>(getWeekId(new Date()));
-  const [view, setView] = useState<'current' | 'history' | 'manage_users'>('current');
+  const [view, setView] = useState<'current' | 'history' | 'manage_users' | 'analysis'>('current');
 
   const fetchData = useCallback(async (currentSession: Session) => {
     try {
@@ -256,6 +257,12 @@ function App() {
               >
                  <span className="flex items-center gap-2"><UsersIcon /> <span className="hidden sm:inline">Gerenciar Usuários</span></span>
               </button>
+               <button
+                onClick={() => setView('analysis')}
+                className={`px-2 sm:px-4 py-2 font-semibold transition-colors ${view === 'analysis' ? 'text-brand-primary border-b-2 border-brand-primary' : 'text-gray-400'}`}
+              >
+                 <span className="flex items-center gap-2"><ChartBarIcon /> <span className="hidden sm:inline">Análise</span></span>
+              </button>
             </nav>
             {view === 'current' && (
               <CurrentWeekView
@@ -276,6 +283,7 @@ function App() {
                 currentUserProfile={profile}
               />
             )}
+            {view === 'analysis' && <PredictiveAnalysisView />}
           </>
         ) : (
           <EmployeeWeekView 

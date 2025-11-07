@@ -3,7 +3,6 @@ import { supabase } from '../supabase';
 import { PredictionResult, DayKey } from '../types';
 import { getReadableWeekRange } from '../utils';
 import { ChartBarIcon } from './icons';
-// FIX: Import GoogleGenAI and Type for Gemini API integration.
 import { GoogleGenAI, Type } from '@google/genai';
 
 const PredictiveAnalysisView: React.FC = () => {
@@ -66,7 +65,6 @@ const PredictiveAnalysisView: React.FC = () => {
             const lastWeekId = Object.keys(dailyCounts).reduce((latest, key) => key > latest ? key : latest, '').split(',')[0];
             const nextWeekId = getNextWeekId(lastWeekId);
                 
-            // FIX: Call Gemini AI instead of DeepSeek.
             if (!process.env.API_KEY) {
                 throw new Error("A chave de API GEMINI_API_KEY não foi configurada. Verifique o arquivo .env e a configuração do Vite.");
             }
