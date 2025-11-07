@@ -18,54 +18,36 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const getSessionAndProfile = async () => {
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      
-      if (sessionError) {
-          console.error("Error getting session:", sessionError);
-          setLoading(false);
-          return;
-      }
-
+    // onAuthStateChange fires immediately with the current session,
+    // so it handles both the initial load and subsequent changes.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setSession(session);
+
       if (session?.user) {
         const { data: userProfile, error } = await supabase
           .from('profiles')
           .select('*')
           .eq('id', session.user.id)
           .single();
+
         if (error) {
           console.error('Error fetching user profile:', error);
+          // If profile doesn't exist, log out to prevent inconsistent state
+          setUser(null);
+          await supabase.auth.signOut();
         } else {
           setUser(userProfile as UserProfile);
         }
+      } else {
+        // If there's no session, ensure user is null
+        setUser(null);
       }
       setLoading(false);
-    };
-
-    getSessionAndProfile();
-
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      setSession(session);
-      setUser(null); // Reset user profile on auth change
-      if (session?.user) {
-        setLoading(true);
-        const { data: userProfile, error } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', session.user.id)
-          .single();
-        if (error) {
-          console.error('Error fetching user profile on auth change:', error);
-        } else {
-          setUser(userProfile as UserProfile);
-        }
-        setLoading(false);
-      }
     });
 
+    // Cleanup subscription on unmount
     return () => {
-      authListener.subscription.unsubscribe();
+      subscription.unsubscribe();
     };
   }, []);
 
@@ -74,6 +56,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (error) {
         console.error("Error signing out:", error);
     }
+    // Auth state change will handle setting session and user to null
   };
 
   const value = {
@@ -83,7 +66,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     signOut,
   };
 
-  return <AuthContext.Provider value={value}>{!loading && children}</AuthContext.Provider>;
+  // Render children only when not in the initial loading state.
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
 export const useAuth = () => {
