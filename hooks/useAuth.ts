@@ -9,49 +9,48 @@ export function useAuth() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Este efeito é executado apenas uma vez na montagem do componente para configurar o listener de autenticação.
     const { data: authListener } = (supabase.auth as any).onAuthStateChange(
       async (_event: string, session: Session | null) => {
-        setSession(session);
-        
-        // Se uma sessão existir, busca o perfil do usuário.
-        if (session?.user) {
-          const { data, error } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', session.user.id)
-            .single();
+        try {
+          setSession(session);
+          if (session?.user) {
+            const { data, error } = await supabase
+              .from('profiles')
+              .select('*')
+              .eq('id', session.user.id)
+              .single();
 
-          if (error) {
-            console.error('Error fetching profile:', error);
-            setProfile(null);
+            if (error) {
+              console.error('Error fetching profile:', error);
+              setProfile(null);
+            } else {
+              setProfile(data);
+            }
           } else {
-            setProfile(data);
+            setProfile(null);
           }
-        } else {
-          // Se não houver sessão, garante que o perfil seja nulo.
-          setProfile(null);
+        } catch (e) {
+            console.error("An error occurred in onAuthStateChange callback", e);
+            setProfile(null);
+            setSession(null);
+        } finally {
+          // Esta é a correção definitiva. O carregamento é finalizado
+          // independentemente de sucesso ou falha dentro do bloco try.
+          setLoading(false);
         }
-
-        // Independentemente do resultado, a verificação inicial de autenticação está completa.
-        // Finaliza o estado de carregamento. Esta é a parte crucial que impede o loop.
-        setLoading(false);
       }
     );
 
     return () => {
-      // Limpa o listener quando o componente é desmontado.
       authListener.subscription.unsubscribe();
     };
-  }, []); // O array de dependências vazio garante que este efeito seja executado apenas UMA VEZ.
+  }, []);
 
   const logout = async () => {
       const { error } = await (supabase.auth as any).signOut();
       if (error) {
         console.error('Error logging out:', error.message);
       }
-      // O listener onAuthStateChange acima cuidará da atualização do estado automaticamente,
-      // definindo a sessão e o perfil como nulos.
   }
 
   return { session, profile, user: session?.user ?? null, loading, logout };
