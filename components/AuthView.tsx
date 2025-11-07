@@ -69,7 +69,9 @@ const AuthView: React.FC = () => {
         } catch (err: any) {
             console.error("Auth Error:", err.message);
 
-            if (err.message.includes("Invalid login credentials")) {
+            if (err.message.includes("Database error granting user")) {
+                setError("Erro de Permissão no Banco de Dados. O login foi validado, mas o sistema não conseguiu ler seu perfil. Verifique no painel do Supabase: 1) Se existe um perfil para este usuário na tabela 'profiles'. 2) Se o 'id' neste perfil é EXATAMENTE o mesmo do 'UID' do usuário na seção 'Authentication'. 3) Se as Políticas de Segurança (RLS) da tabela 'profiles' estão ativas e corretas.");
+            } else if (err.message.includes("Invalid login credentials")) {
                 setError("Nº do Crachá ou senha inválidos.");
             } else if (err.message.includes('profiles_employee_id_key')) {
                 // This is the new, more robust check for the UNIQUE constraint on the database.
