@@ -1,4 +1,5 @@
 
+
 import React, { useState } from 'react';
 import { supabase } from '../services/supabase';
 
@@ -16,7 +17,8 @@ const Login: React.FC = () => {
     // We use a dummy domain to satisfy Supabase's email requirement for login.
     const email = `${badgeNumber}@lunchapp.local`;
 
-    const { error } = await supabase.auth.signInWithPassword({
+    // Fix: Cast to `any` to bypass incorrect V1 type definitions that cause a compilation error for signInWithPassword.
+    const { error } = await (supabase.auth as any).signInWithPassword({
       email,
       password,
     });

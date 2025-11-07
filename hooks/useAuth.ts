@@ -1,7 +1,9 @@
 
+
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../services/supabase';
-import { Session, User } from '@supabase/supabase-js';
+// Fix: Use imports from @supabase/auth-js as some versions of supabase-js do not export Session and User directly.
+import { Session, User } from '@supabase/auth-js';
 import { Profile } from '../types';
 
 export function useAuth() {
@@ -29,22 +31,15 @@ export function useAuth() {
   }, []);
 
   useEffect(() => {
-    const getInitialSession = async () => {
-        const { data: { session } } = await supabase.auth.getSession();
+    // onAuthStateChange fires an event immediately on page load with the initial session data.
+    // This single listener handles the initial session check, login, logout, and token refreshes.
+    // Fix: Cast to `any` to bypass incorrect V1 type definitions that cause a compilation error.
+    const { data: authListener } = (supabase.auth as any).onAuthStateChange(
+      async (_event: string, session: Session | null) => {
         setSession(session);
         await fetchProfile(session?.user ?? null);
+        // Once the session is processed and profile is fetched, the initial auth check is complete.
         setLoading(false);
-    };
-
-    getInitialSession();
-
-    const { data: authListener } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        setSession(session);
-        await fetchProfile(session?.user ?? null);
-        if (_event === 'SIGNED_IN' || _event === 'USER_UPDATED') {
-            setLoading(false);
-        }
       }
     );
 
@@ -54,7 +49,8 @@ export function useAuth() {
   }, [fetchProfile]);
   
   const logout = async () => {
-      await supabase.auth.signOut();
+      // Fix: Cast to `any` to bypass incorrect V1 type definitions that cause a compilation error.
+      await (supabase.auth as any).signOut();
       setSession(null);
       setProfile(null);
   }

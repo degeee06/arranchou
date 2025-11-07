@@ -1,4 +1,4 @@
-import { User } from '@supabase/supabase-js';
+import { User } from '@supabase/auth-js';
 
 // Fix: Add a global type definition for import.meta.env to fix TypeScript errors
 // related to Vite environment variables, as the vite/client types could not be found.
