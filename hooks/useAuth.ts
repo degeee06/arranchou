@@ -50,9 +50,11 @@ export function useAuth() {
   
   const logout = async () => {
       // Fix: Cast to `any` to bypass incorrect V1 type definitions that cause a compilation error.
-      await (supabase.auth as any).signOut();
-      setSession(null);
-      setProfile(null);
+      const { error } = await (supabase.auth as any).signOut();
+      if (error) {
+        console.error('Error logging out:', error.message);
+      }
+      // The onAuthStateChange listener will handle all state updates automatically.
   }
 
   return { session, profile, user: session?.user ?? null, loading, logout };
