@@ -1,5 +1,5 @@
-// Fix: Changed to a named import for jsPDF to correctly resolve the module for augmentation.
-import { jsPDF } from 'jspdf';
+// Fix: Use default import for jsPDF as it is a default export, which allows TypeScript to find the module for augmentation.
+import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 import { UserProfile, AttendanceRecord, AttendanceStatus, WeekData } from '../types';
 
