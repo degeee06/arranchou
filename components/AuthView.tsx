@@ -21,6 +21,30 @@ const AuthView: React.FC = () => {
 
         try {
             if (isSignUp) {
+                // 1. Check if employee ID is allowed to register
+                const { data: isAllowed, error: rpcError } = await supabase.rpc('is_employee_allowed', { p_employee_id: employeeId });
+
+                if (rpcError) {
+                    throw new Error("Não foi possível verificar a permissão de cadastro. Tente novamente.");
+                }
+                if (!isAllowed) {
+                    setError("Seu Nº de Crachá não tem permissão para se cadastrar. Por favor, fale com um administrador.");
+                    setLoading(false);
+                    return;
+                }
+
+                // 2. Check if employee ID is already registered in profiles
+                const { error: existingUserError } = await supabase.from('profiles').select('id').eq('employee_id', employeeId).single();
+                
+                if (existingUserError === null) {
+                    setError("Este Nº do Crachá já está cadastrado. Tente fazer login.");
+                    setLoading(false);
+                    return;
+                }
+                if (existingUserError && existingUserError.code !== 'PGRST116') { // 'PGRST116' means no rows found, which is good
+                    throw existingUserError;
+                }
+                
                 const { error } = await supabase.auth.signUp({
                     email,
                     password,
