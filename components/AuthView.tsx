@@ -16,8 +16,18 @@ const AuthView: React.FC = () => {
         setError(null);
         setMessage(null);
 
+        // **CORREÇÃO DEFINITIVA:** Validação robusta para evitar envio de dados vazios.
+        const trimmedFullName = fullName.trim();
+        const trimmedEmployeeId = employeeId.trim();
+
+        if (isSignUp && (!trimmedFullName || !trimmedEmployeeId)) {
+            setError("Nome completo e Nº do Crachá são obrigatórios.");
+            setLoading(false);
+            return;
+        }
+
         // Generate a consistent, fake email from the employee ID for Supabase Auth
-        const email = `employee_${employeeId}@arranchou.app`;
+        const email = `employee_${trimmedEmployeeId}@arranchou.app`;
 
         try {
             if (isSignUp) {
@@ -26,9 +36,9 @@ const AuthView: React.FC = () => {
                     password,
                     options: {
                         data: {
-                            full_name: fullName,
-                            employee_id: employeeId,
-                            role: 'employee',
+                            full_name: trimmedFullName,
+                            employee_id: trimmedEmployeeId,
+                            // A 'role' não é mais enviada, o banco de dados cuida disso com o valor DEFAULT.
                         }
                     }
                 });
@@ -73,9 +83,8 @@ const AuthView: React.FC = () => {
                         if (!existingProfile) {
                             const { error: profileError } = await supabase.from('profiles').insert({
                                 id: signInData.user.id,
-                                full_name: fullName,
-                                employee_id: employeeId,
-                                role: 'employee'
+                                full_name: trimmedFullName, // Use o valor validado
+                                employee_id: trimmedEmployeeId, // Use o valor validado
                             });
 
                             if (profileError) {
