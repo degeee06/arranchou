@@ -22,6 +22,17 @@ const AccessControlView: React.FC = () => {
   const [removeConfirm, setRemoveConfirm] = useState<AllowedEmployee | null>(null);
   const [isRemoving, setIsRemoving] = useState(false);
 
+  // Auto-clear notification messages after 5 seconds for better UX
+  useEffect(() => {
+    if (message || error) {
+      const timer = setTimeout(() => {
+        setMessage(null);
+        setError(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [message, error]);
+
   const fetchAllowedEmployees = useCallback(async () => {
     try {
       setLoading(true);
@@ -57,22 +68,27 @@ const AccessControlView: React.FC = () => {
     }
 
     try {
-      const { data, error } = await supabase
+      const { data, error: insertError } = await supabase
         .from('allowed_employees')
-        .insert([{ employee_id: newEmployeeId, full_name: newFullName }])
-        .select();
+        .insert({ employee_id: newEmployeeId, full_name: newFullName })
+        .select()
+        .single();
 
-      if (error) throw error;
+      if (insertError) throw insertError;
 
       if (data) {
-        setAllowedEmployees(prev => [...prev, data[0]].sort((a,b) => a.full_name.localeCompare(b.full_name)));
+        setAllowedEmployees(prev => [...prev, data].sort((a,b) => a.full_name.localeCompare(b.full_name)));
         setMessage(`${newFullName} foi adicionado à lista de permissões.`);
         setNewEmployeeId('');
         setNewFullName('');
       }
     } catch (err: any) {
-      setError('Falha ao adicionar funcionário. Verifique se o Nº do Crachá já existe.');
-      console.error(err);
+      console.error("Erro ao adicionar funcionário:", err);
+      if (err.code === '23505') { // PostgreSQL code for unique_violation
+          setError(`O Nº do Crachá "${newEmployeeId}" já está na lista de permissões.`);
+      } else {
+          setError('Falha ao adicionar funcionário. Verifique sua conexão ou os dados inseridos.');
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -139,8 +155,8 @@ const AccessControlView: React.FC = () => {
                     <button type="submit" className="w-full bg-brand-primary hover:bg-brand-secondary text-white font-bold py-2 px-4 rounded-md transition duration-300 disabled:bg-gray-600" disabled={isSubmitting}>
                         {isSubmitting ? 'Adicionando...' : 'Adicionar à Lista'}
                     </button>
-                    {error && <p className="text-center text-red-400 text-sm">{error}</p>}
-                    {message && <p className="text-center text-green-400 text-sm">{message}</p>}
+                    {error && <p className="mt-2 text-center text-red-400 text-sm">{error}</p>}
+                    {message && <p className="mt-2 text-center text-green-400 text-sm">{message}</p>}
                 </div>
             </form>
         </div>

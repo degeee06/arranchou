@@ -8,8 +8,9 @@ import CurrentWeekView from './components/CurrentWeekView';
 import HistoryView from './components/HistoryView';
 import EmployeeWeekView from './components/EmployeeWeekView';
 import ManageUsersView from './components/ManageUsersView';
-import AccessControlView from './components/AccessControlView'; // Importar nova view
-import { CalendarIcon, HistoryIcon, UsersIcon, ShieldCheckIcon } from './components/icons'; // Importar novo ícone
+import AccessControlView from './components/AccessControlView';
+import PredictiveAnalysisView from './components/PredictiveAnalysisView'; // Importar
+import { CalendarIcon, HistoryIcon, UsersIcon, ShieldCheckIcon, ChartBarIcon } from './components/icons'; // Importar
 
 // Function to get ISO week number (e.g., 2024-W42)
 export const getWeekId = (date: Date): string => {
@@ -32,7 +33,7 @@ function App() {
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentWeekId] = useState<string>(getWeekId(new Date()));
-  const [view, setView] = useState<'current' | 'history' | 'manage_users' | 'access_control'>('current'); // Adicionar novo estado de view
+  const [view, setView] = useState<'current' | 'history' | 'manage_users' | 'access_control' | 'predictive_analysis'>('current'); // Adicionar novo estado de view
 
   const fetchData = useCallback(async (currentSession: Session) => {
     try {
@@ -44,21 +45,15 @@ function App() {
         .maybeSingle(); // Use maybeSingle() to prevent error on missing profile
       if (profileError) throw profileError;
 
-      // If the user is logged in but has no profile, it's an inconsistent state.
-      // Log them out and prompt them to contact support or re-register.
       if (!userProfileData) {
         console.error(`Inconsistent state: User ${currentSession.user.id} authenticated but profile is missing.`);
         alert("Erro: Seu perfil não foi encontrado. Por favor, tente se cadastrar novamente ou contate o suporte. Você será desconectado.");
         await supabase.auth.signOut();
-        setLoading(false); // Ensure loading state is turned off
-        return; // Stop execution
+        setLoading(false); 
+        return; 
       }
 
-
-      // The userProfileData fetched directly from the database IS the source of truth.
-      // No need to check session metadata which can be stale.
       setProfile(userProfileData);
-
 
       if (userProfileData.role === 'admin' || userProfileData.role === 'super_admin') {
         const { data: allProfiles, error: profilesError } = await supabase
@@ -71,7 +66,6 @@ function App() {
         setProfiles([userProfileData]);
       }
 
-      // Fetch all attendance records. Realtime will keep it in sync.
       const { data: allAttendances, error: attendancesError } = await supabase
         .from('attendances')
         .select('*');
@@ -156,10 +150,7 @@ function App() {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'attendances' },
         (payload) => {
-          // This real-time subscription ensures data consistency across sessions
-          // and synchronizes the state with the database, complementing optimistic updates.
           if (payload.eventType === 'INSERT') {
-            // Add new record, removing any potential duplicates from optimistic updates.
             setAttendanceRecords(prev => 
               [...prev.filter(r => !(r.user_id === payload.new.user_id && r.week_id === payload.new.week_id && r.day === payload.new.day)), payload.new]
             );
@@ -189,13 +180,8 @@ function App() {
     const { error } = await supabase.auth.signOut();
     if (error) {
       console.error("Error signing out:", error);
-      // Handle the case where the session is already gone client-side.
-      // This is not a critical error for the user, as the goal is to be logged out.
-      // We can manually clear the state to ensure the UI updates correctly.
       if (error.name === 'AuthSessionMissingError') {
         console.warn('Session was already missing on sign out. Clearing state manually.');
-        // Manually clear all user-related state, since the onAuthStateChange
-        // listener won't fire if the session was already gone.
         setSession(null);
         setProfile(null);
         setProfiles([]);
@@ -204,10 +190,8 @@ function App() {
         alert("Ocorreu um erro ao sair. Por favor, tente novamente.");
       }
     }
-    // On success, the onAuthStateChange listener will clear the state.
   };
   
-  // Transform attendance records into a more usable format
   const attendanceData: Attendance = useMemo(() => {
     return attendanceRecords.reduce<Attendance>((acc, record) => {
       if (!acc[record.user_id]) {
@@ -243,7 +227,7 @@ function App() {
                 onClick={() => setView('current')}
                 className={`px-2 sm:px-4 py-2 font-semibold transition-colors ${view === 'current' ? 'text-brand-primary border-b-2 border-brand-primary' : 'text-gray-400'}`}
               >
-                <span className="flex items-center gap-2"><CalendarIcon /> <span className="hidden sm:inline">Semana Atual</span></span>
+                <span className="flex items-center gap-2"><CalendarIcon /> <span className="hidden sm:inline">Semana</span></span>
               </button>
               <button
                 onClick={() => setView('history')}
@@ -255,13 +239,19 @@ function App() {
                 onClick={() => setView('manage_users')}
                 className={`px-2 sm:px-4 py-2 font-semibold transition-colors ${view === 'manage_users' ? 'text-brand-primary border-b-2 border-brand-primary' : 'text-gray-400'}`}
               >
-                 <span className="flex items-center gap-2"><UsersIcon /> <span className="hidden sm:inline">Gerenciar Usuários</span></span>
+                 <span className="flex items-center gap-2"><UsersIcon /> <span className="hidden sm:inline">Usuários</span></span>
               </button>
                <button
                 onClick={() => setView('access_control')}
                 className={`px-2 sm:px-4 py-2 font-semibold transition-colors ${view === 'access_control' ? 'text-brand-primary border-b-2 border-brand-primary' : 'text-gray-400'}`}
               >
-                 <span className="flex items-center gap-2"><ShieldCheckIcon /> <span className="hidden sm:inline">Controle de Acesso</span></span>
+                 <span className="flex items-center gap-2"><ShieldCheckIcon /> <span className="hidden sm:inline">Acesso</span></span>
+              </button>
+              <button
+                onClick={() => setView('predictive_analysis')}
+                className={`px-2 sm:px-4 py-2 font-semibold transition-colors ${view === 'predictive_analysis' ? 'text-brand-primary border-b-2 border-brand-primary' : 'text-gray-400'}`}
+              >
+                 <span className="flex items-center gap-2"><ChartBarIcon className="h-5 w-5" /> <span className="hidden sm:inline">Análise IA</span></span>
               </button>
             </nav>
             {view === 'current' && (
@@ -284,6 +274,7 @@ function App() {
               />
             )}
             {view === 'access_control' && <AccessControlView />}
+            {view === 'predictive_analysis' && <PredictiveAnalysisView />}
           </>
         ) : (
           <EmployeeWeekView 
