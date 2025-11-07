@@ -34,7 +34,7 @@ export interface Attendance {
   profiles?: Profile; // Optional, for joined queries
 }
 
-export interface AuthContextType {
+export interface UseAuthReturn {
   user: User | null;
   profile: Profile | null;
   loading: boolean;
