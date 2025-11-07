@@ -16,88 +16,91 @@ const AuthView: React.FC = () => {
         setError(null);
         setMessage(null);
 
+        // Generate a consistent, fake email from the employee ID for Supabase Auth
         const email = `employee_${employeeId}@arranchou.app`;
 
         try {
             if (isSignUp) {
-                // --- SIGN UP LOGIC ---
-                const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+                const { error } = await supabase.auth.signUp({
                     email,
                     password,
-                });
-
-                if (signUpError) {
-                    // This error is common if the user tried to sign up, failed midway, and tries again.
-                    if (signUpError.message.includes("User already registered")) {
-                        setError("Este Nº do Crachá já está cadastrado. Tente fazer o login.");
-                    } else {
-                        throw signUpError;
+                    options: {
+                        data: {
+                            full_name: fullName,
+                            employee_id: employeeId,
+                            role: 'employee',
+                        }
                     }
-                    setLoading(false);
-                    return;
-                }
-                
-                if (!signUpData.user) {
-                     throw new Error("O cadastro falhou: nenhum usuário foi retornado após a criação.");
-                }
-
-                // Manually insert the profile. This is the most reliable way.
-                const { error: profileError } = await supabase.from('profiles').insert({
-                    id: signUpData.user.id,
-                    full_name: fullName,
-                    employee_id: employeeId,
                 });
-
-                if (profileError) {
-                    console.error("CRITICAL: Profile creation failed after sign up:", profileError);
-                    // This is a critical state. The user exists in auth but not in profiles.
-                    // We must inform them to contact support.
-                    throw new Error("Seu login foi criado, mas houve um erro ao salvar seu perfil. Por favor, contate o suporte para corrigir sua conta.");
-                }
-
-                setMessage('Cadastro realizado com sucesso! Você será redirecionado para a tela de login.');
-                setTimeout(() => {
-                    setIsSignUp(false);
-                    setFullName('');
-                    setEmployeeId('');
-                    setPassword('');
-                    setMessage(null);
-                }, 3000);
-
+                if (error) throw error;
+                setMessage('Cadastro realizado com sucesso! Você já pode entrar.');
             } else {
-                // --- SIGN IN LOGIC ---
-                const { error: signInError } = await supabase.auth.signInWithPassword({
+                const { error } = await supabase.auth.signInWithPassword({
                     email,
                     password,
                 });
-                
-                if (signInError) {
-                    if (signInError.message.includes("Invalid login credentials")) {
-                         setError("Nº do Crachá ou senha inválidos.");
-                    } else {
-                        throw signInError;
-                    }
-                }
-                // On successful login, the App.tsx onAuthStateChange listener will take over.
+                if (error) throw error;
+                // Login will be handled by the listener in App.tsx
             }
         } catch (err: any) {
-            console.error("Auth Error:", err);
-            // Use a fallback error message if a specific one isn't set
-            if (!error) {
-                setError(err.error_description || err.message || "Ocorreu um erro desconhecido.");
+            console.error("Auth Error:", err.message);
+
+            if (err.message.includes("Invalid login credentials")) {
+                setError("Nº do Crachá ou senha inválidos.");
+            } else if (err.message.includes('profiles_employee_id_key')) {
+                // This is the new, more robust check for the UNIQUE constraint on the database.
+                setError("Este Nº do Crachá já está cadastrado. Tente um número diferente ou faça login.");
+            } else if (err.message.includes("User already registered")) {
+                console.warn("User already exists in auth, but maybe not in profiles. Attempting login to recover.");
+                // This is our recovery logic for orphan auth users.
+                // If sign-up fails because the user exists, we try to sign in.
+                // If sign-in succeeds, it means their profile was missing. We recreate it.
+                try {
+                    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+                        email,
+                        password,
+                    });
+                    if (signInError) {
+                        // If sign-in fails here, it's a genuine wrong password for an existing user.
+                        setError("Este Nº do Crachá já está cadastrado. Se você já tem uma conta, a senha informada está incorreta.");
+                        return; // Stop execution
+                    }
+                    
+                    if (signInData.user) {
+                         // Sign-in successful, now check if profile exists before creating
+                        const { data: existingProfile } = await supabase.from('profiles').select('id').eq('id', signInData.user.id).single();
+                        
+                        if (!existingProfile) {
+                            const { error: profileError } = await supabase.from('profiles').insert({
+                                id: signInData.user.id,
+                                full_name: fullName,
+                                employee_id: employeeId,
+                                role: 'employee'
+                            });
+
+                            if (profileError) {
+                                console.error("Failed to recreate profile for orphan user:", profileError);
+                                setError("Falha ao recuperar conta. Tente novamente mais tarde.");
+                            } else {
+                                console.log("Successfully recovered and recreated profile for user:", signInData.user.id);
+                                // The onAuthStateChange listener will handle the successful login
+                            }
+                        } else {
+                           // This case is rare, but means the profile exists and the user should just log in.
+                           // The login already succeeded, so the listener will handle it.
+                           console.log("User has an auth entry and a profile. Login will proceed.");
+                        }
+                    }
+                } catch (recoveryErr: any) {
+                    setError("Ocorreu um erro inesperado durante a recuperação da conta. Tente fazer login.");
+                }
+            }
+            else {
+                setError(err.error_description || err.message);
             }
         } finally {
             setLoading(false);
         }
-    };
-    
-    const toggleMode = () => {
-        setIsSignUp(!isSignUp);
-        setError(null);
-        setMessage(null);
-        setEmployeeId('');
-        setPassword('');
-        setFullName('');
     };
 
     return (
@@ -108,10 +111,10 @@ const AuthView: React.FC = () => {
             </div>
             <div className="w-full max-w-sm mx-auto bg-gray-800 p-8 rounded-lg shadow-lg">
                 <div className="mb-4 flex border-b border-gray-700">
-                    <button onClick={() => !isSignUp && toggleMode()} className={`w-1/2 py-2 font-semibold ${!isSignUp ? 'text-brand-primary border-b-2 border-brand-primary' : 'text-gray-400'}`}>
+                    <button onClick={() => { setIsSignUp(false); setError(null); setMessage(null);}} className={`w-1/2 py-2 font-semibold ${!isSignUp ? 'text-brand-primary border-b-2 border-brand-primary' : 'text-gray-400'}`}>
                         Entrar
                     </button>
-                    <button onClick={() => isSignUp && toggleMode()} className={`w-1/2 py-2 font-semibold ${isSignUp ? 'text-brand-primary border-b-2 border-brand-primary' : 'text-gray-400'}`}>
+                    <button onClick={() => { setIsSignUp(true); setError(null); setMessage(null);}} className={`w-1/2 py-2 font-semibold ${isSignUp ? 'text-brand-primary border-b-2 border-brand-primary' : 'text-gray-400'}`}>
                         Cadastrar
                     </button>
                 </div>
