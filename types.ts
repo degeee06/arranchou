@@ -29,13 +29,3 @@ export interface HistoryEntry {
   people: Profile[];
   attendance: Attendance;
 }
-
-// FIX: Add PredictionResult type for the predictive analysis feature.
-export interface PredictionResult {
-  predictions: {
-    day: DayKey;
-    predicted_attendees: number;
-  }[];
-  insight: string;
-  nextWeekId: string;
-}
