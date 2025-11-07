@@ -7,11 +7,12 @@ import { CheckIcon, XIcon } from './icons';
 interface EmployeeWeekViewProps {
   profile: Profile;
   attendance: Attendance;
+  attendanceRecords: AttendanceRecord[];
   setAttendanceRecords: React.Dispatch<React.SetStateAction<AttendanceRecord[]>>;
   currentWeekId: string;
 }
 
-const EmployeeWeekView: React.FC<EmployeeWeekViewProps> = ({ profile, attendance, setAttendanceRecords, currentWeekId }) => {
+const EmployeeWeekView: React.FC<EmployeeWeekViewProps> = ({ profile, attendance, attendanceRecords, setAttendanceRecords, currentWeekId }) => {
     const jsTodayIndex = new Date().getDay();
     const todayIndex = jsTodayIndex === 0 ? 6 : jsTodayIndex - 1;
 
@@ -23,27 +24,35 @@ const EmployeeWeekView: React.FC<EmployeeWeekViewProps> = ({ profile, attendance
         }
 
         const currentStatus = attendance[profile.id]?.[day];
+        const originalRecords = attendanceRecords;
 
         // New Cycle for employees: (undefined | false) -> true -> undefined
         if (currentStatus === true) {
-            // From present to not marked: delete the record
+            // Optimistic update: From present to not marked (delete)
+            setAttendanceRecords(prev => prev.filter(r => !(r.user_id === profile.id && r.week_id === currentWeekId && r.day === day)));
+            
+            // DB operation
             const { error } = await supabase.from('attendances').delete().match({ user_id: profile.id, week_id: currentWeekId, day });
             if (error) {
-                alert("Erro ao atualizar presença.");
-                return;
+                alert("Erro ao salvar a alteração. A mudança foi revertida.");
+                console.error("Falha ao deletar:", error);
+                setAttendanceRecords(originalRecords); // Rollback
             }
-            setAttendanceRecords(prev => prev.filter(r => !(r.user_id === profile.id && r.week_id === currentWeekId && r.day === day)));
         } else {
-            // From not marked (undefined) or absent (false) to present: set is_present to true
-            const { error } = await supabase.from('attendances').upsert(
+            // Optimistic update: From not marked/absent to present (upsert)
+            setAttendanceRecords(prev => [...prev.filter(r => !(r.user_id === profile.id && r.week_id === currentWeekId && r.day === day)), { user_id: profile.id, week_id: currentWeekId, day, is_present: true }]);
+            
+            // DB operation
+            const { data, error } = await supabase.from('attendances').upsert(
                 { user_id: profile.id, week_id: currentWeekId, day, is_present: true },
                 { onConflict: 'user_id,week_id,day' }
-            );
-            if (error) {
-                alert("Erro ao atualizar presença.");
-                return;
+            ).select();
+
+            if (error || !data || data.length === 0) {
+                alert("Erro ao salvar a alteração. A mudança foi revertida.");
+                console.error("Falha no upsert (presente):", error, data);
+                setAttendanceRecords(originalRecords); // Rollback
             }
-            setAttendanceRecords(prev => [...prev.filter(r => !(r.user_id === profile.id && r.week_id === currentWeekId && r.day === day)), { user_id: profile.id, week_id: currentWeekId, day, is_present: true }]);
         }
     };
 

@@ -261,6 +261,7 @@ function App() {
               <CurrentWeekView
                 profiles={profiles}
                 attendance={attendanceData}
+                attendanceRecords={attendanceRecords}
                 setAttendanceRecords={setAttendanceRecords}
                 currentWeekId={currentWeekId}
                 isAdmin={isAdmin}
@@ -280,6 +281,7 @@ function App() {
           <EmployeeWeekView 
             profile={profile}
             attendance={attendanceData}
+            attendanceRecords={attendanceRecords}
             setAttendanceRecords={setAttendanceRecords}
             currentWeekId={currentWeekId}
           />

@@ -11,6 +11,7 @@ import { supabase } from '../supabase';
 interface CurrentWeekViewProps {
   profiles: Profile[];
   attendance: Attendance;
+  attendanceRecords: AttendanceRecord[];
   setAttendanceRecords: React.Dispatch<React.SetStateAction<AttendanceRecord[]>>;
   currentWeekId: string;
   isAdmin: boolean;
@@ -59,7 +60,7 @@ const AdminPersonalAttendance: React.FC<{
 };
 
 
-const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance, setAttendanceRecords, currentWeekId, isAdmin, adminProfile }) => {
+const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance, attendanceRecords, setAttendanceRecords, currentWeekId, isAdmin, adminProfile }) => {
   const jsTodayIndex = new Date().getDay(); // 0 for Sunday, 1 for Monday...
   const todayIndex = jsTodayIndex === 0 ? 6 : jsTodayIndex - 1; 
   
@@ -78,38 +79,51 @@ const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance,
     }
     
     const currentStatus = attendance[personId]?.[day];
-    
+    const originalRecords = attendanceRecords; // Save for rollback
+
     // Cycle: undefined -> true -> false -> undefined (by deleting)
     if (currentStatus === undefined) {
-      // Set to present
-      const { error } = await supabase.from('attendances').upsert(
-        { user_id: personId, week_id: currentWeekId, day, is_present: true },
-        { onConflict: 'user_id,week_id,day' }
-      );
-      if (error) {
-        alert("Erro ao atualizar presença.");
-        return;
-      }
-      setAttendanceRecords(prev => [...prev.filter(r => !(r.user_id === personId && r.week_id === currentWeekId && r.day === day)), { user_id: personId, week_id: currentWeekId, day, is_present: true }]);
+        // Optimistic update
+        setAttendanceRecords(prev => [...prev.filter(r => !(r.user_id === personId && r.week_id === currentWeekId && r.day === day)), { user_id: personId, week_id: currentWeekId, day, is_present: true }]);
+        
+        // DB operation
+        const { data, error } = await supabase.from('attendances').upsert(
+            { user_id: personId, week_id: currentWeekId, day, is_present: true },
+            { onConflict: 'user_id,week_id,day' }
+        ).select();
+
+        if (error || !data || data.length === 0) {
+            alert("Erro ao salvar a alteração. A mudança foi revertida.");
+            console.error("Falha no upsert (presente):", error);
+            setAttendanceRecords(originalRecords); // Rollback
+        }
     } else if (currentStatus === true) {
-      // Set to absent
-      const { error } = await supabase.from('attendances').upsert(
-        { user_id: personId, week_id: currentWeekId, day, is_present: false },
-        { onConflict: 'user_id,week_id,day' }
-      );
-      if (error) {
-        alert("Erro ao atualizar presença.");
-        return;
-      }
-      setAttendanceRecords(prev => prev.map(r => (r.user_id === personId && r.week_id === currentWeekId && r.day === day) ? { ...r, is_present: false } : r));
+        // Optimistic update
+        setAttendanceRecords(prev => prev.map(r => (r.user_id === personId && r.week_id === currentWeekId && r.day === day) ? { ...r, is_present: false } : r));
+
+        // DB operation
+        const { data, error } = await supabase.from('attendances').upsert(
+            { user_id: personId, week_id: currentWeekId, day, is_present: false },
+            { onConflict: 'user_id,week_id,day' }
+        ).select();
+        
+        if (error || !data || data.length === 0) {
+            alert("Erro ao salvar a alteração. A mudança foi revertida.");
+            console.error("Falha no upsert (ausente):", error);
+            setAttendanceRecords(originalRecords); // Rollback
+        }
     } else {
-      // Set to not marked by deleting the record
-      const { error } = await supabase.from('attendances').delete().match({ user_id: personId, week_id: currentWeekId, day });
-      if (error) {
-        alert("Erro ao atualizar presença.");
-        return;
-      }
-      setAttendanceRecords(prev => prev.filter(r => !(r.user_id === personId && r.week_id === currentWeekId && r.day === day)));
+        // Optimistic update
+        setAttendanceRecords(prev => prev.filter(r => !(r.user_id === personId && r.week_id === currentWeekId && r.day === day)));
+
+        // DB operation
+        const { error } = await supabase.from('attendances').delete().match({ user_id: personId, week_id: currentWeekId, day });
+        
+        if (error) {
+            alert("Erro ao salvar a alteração. A mudança foi revertida.");
+            console.error("Falha ao deletar:", error);
+            setAttendanceRecords(originalRecords); // Rollback
+        }
     }
   };
 
@@ -133,13 +147,8 @@ const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance,
         return;
     }
 
-    // Set original person to absent
-    await supabase.from('attendances').upsert({ user_id: originalPerson.id, week_id: currentWeekId, day: currentDay, is_present: false }, { onConflict: 'user_id,week_id,day' });
-    
-    // Set substitute to present
-    await supabase.from('attendances').upsert({ user_id: substituteId, week_id: currentWeekId, day: currentDay, is_present: true }, { onConflict: 'user_id,week_id,day' });
-    
-    // Optimistically update local state
+    const originalRecords = attendanceRecords;
+    // Optimistic Update
     setAttendanceRecords(prev => {
         const withoutOriginal = prev.filter(r => !(r.user_id === originalPerson.id && r.week_id === currentWeekId && r.day === currentDay));
         const withoutSub = withoutOriginal.filter(r => !(r.user_id === substituteId && r.week_id === currentWeekId && r.day === currentDay));
@@ -150,7 +159,20 @@ const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance,
         ];
     });
 
-    handleCloseSubstituteModal();
+    // DB Operations in parallel
+    const [originalResult, substituteResult] = await Promise.all([
+        supabase.from('attendances').upsert({ user_id: originalPerson.id, week_id: currentWeekId, day: currentDay, is_present: false }, { onConflict: 'user_id,week_id,day' }).select(),
+        supabase.from('attendances').upsert({ user_id: substituteId, week_id: currentWeekId, day: currentDay, is_present: true }, { onConflict: 'user_id,week_id,day' }).select()
+    ]);
+
+    // Check for errors
+    if (originalResult.error || !originalResult.data || originalResult.data.length === 0 || substituteResult.error || !substituteResult.data || substituteResult.data.length === 0) {
+        alert("Erro ao salvar a substituição. A alteração foi revertida.");
+        console.error("Erro na substituição:", { original: originalResult, substitute: substituteResult });
+        setAttendanceRecords(originalRecords); // Rollback
+    } else {
+        handleCloseSubstituteModal();
+    }
   };
   
   const filteredPeople = profiles.filter(person => {
