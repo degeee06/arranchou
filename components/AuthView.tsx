@@ -16,41 +16,87 @@ const AuthView: React.FC = () => {
         setError(null);
         setMessage(null);
 
+        // Generate a consistent, fake email from the employee ID for Supabase Auth
+        const email = `employee_${employeeId}@arranchou.app`;
+
         try {
             if (isSignUp) {
-                // Invoca a função de backend segura para o cadastro
-                const { data, error: functionError } = await supabase.functions.invoke('custom-sign-up', {
-                    body: { employeeId, fullName, password },
+                const { error } = await supabase.auth.signUp({
+                    email,
+                    password,
+                    options: {
+                        data: {
+                            full_name: fullName,
+                            employee_id: employeeId,
+                            role: 'employee',
+                        }
+                    }
                 });
-
-                if (functionError) {
-                    // Tenta extrair a mensagem de erro específica da função
-                    const errorMessage = functionError.context?.error?.message || functionError.message;
-                    throw new Error(errorMessage);
-                }
-                
-                setMessage(data.message || 'Cadastro realizado com sucesso! Você já pode entrar.');
-                setIsSignUp(false); // Alterna para a tela de login após o sucesso
-                
+                if (error) throw error;
+                setMessage('Cadastro realizado com sucesso! Você já pode entrar.');
             } else {
-                // A lógica de login permanece a mesma, usando o email gerado
-                const email = `employee_${employeeId}@arranchou.app`;
                 const { error } = await supabase.auth.signInWithPassword({
                     email,
                     password,
                 });
                 if (error) throw error;
-                // O login bem-sucedido será tratado pelo listener em App.tsx
+                // Login will be handled by the listener in App.tsx
             }
         } catch (err: any) {
-            console.error("Auth Error:", err);
-            const errorMessage = err.message || 'Ocorreu um erro desconhecido.';
+            console.error("Auth Error:", err.message);
 
-            if (errorMessage.includes("Invalid login credentials")) {
+            if (err.message.includes("Invalid login credentials")) {
                 setError("Nº do Crachá ou senha inválidos.");
-            } else {
-                // Exibe a mensagem de erro vinda da função ou do signIn
-                setError(errorMessage);
+            } else if (err.message.includes('profiles_employee_id_key')) {
+                // This is the new, more robust check for the UNIQUE constraint on the database.
+                setError("Este Nº do Crachá já está cadastrado. Tente um número diferente ou faça login.");
+            } else if (err.message.includes("User already registered")) {
+                console.warn("User already exists in auth, but maybe not in profiles. Attempting login to recover.");
+                // This is our recovery logic for orphan auth users.
+                // If sign-up fails because the user exists, we try to sign in.
+                // If sign-in succeeds, it means their profile was missing. We recreate it.
+                try {
+                    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+                        email,
+                        password,
+                    });
+                    if (signInError) {
+                        // If sign-in fails here, it's a genuine wrong password for an existing user.
+                        setError("Este Nº do Crachá já está cadastrado. Se você já tem uma conta, a senha informada está incorreta.");
+                        return; // Stop execution
+                    }
+                    
+                    if (signInData.user) {
+                         // Sign-in successful, now check if profile exists before creating
+                        const { data: existingProfile } = await supabase.from('profiles').select('id').eq('id', signInData.user.id).single();
+                        
+                        if (!existingProfile) {
+                            const { error: profileError } = await supabase.from('profiles').insert({
+                                id: signInData.user.id,
+                                full_name: fullName,
+                                employee_id: employeeId,
+                                role: 'employee'
+                            });
+
+                            if (profileError) {
+                                console.error("Failed to recreate profile for orphan user:", profileError);
+                                setError("Falha ao recuperar conta. Tente novamente mais tarde.");
+                            } else {
+                                console.log("Successfully recovered and recreated profile for user:", signInData.user.id);
+                                // The onAuthStateChange listener will handle the successful login
+                            }
+                        } else {
+                           // This case is rare, but means the profile exists and the user should just log in.
+                           // The login already succeeded, so the listener will handle it.
+                           console.log("User has an auth entry and a profile. Login will proceed.");
+                        }
+                    }
+                } catch (recoveryErr: any) {
+                    setError("Ocorreu um erro inesperado durante a recuperação da conta. Tente fazer login.");
+                }
+            }
+            else {
+                setError(err.error_description || err.message);
             }
         } finally {
             setLoading(false);
