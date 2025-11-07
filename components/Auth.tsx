@@ -2,7 +2,6 @@
 import React, { useState } from 'react';
 import { supabase } from '../services/supabase';
 import { Button, Input } from './ui';
-import { UserRole } from '../types';
 
 const Auth: React.FC = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -40,33 +39,20 @@ const Auth: React.FC = () => {
       } else {
         // For sign-up, we generate a unique email from the badge number.
         const email = `${badgeNumber}@arranchou.app`;
-        const { data, error: signUpError } = await supabase.auth.signUp({
+        const { error: signUpError } = await supabase.auth.signUp({
           email,
           password,
           options: {
             data: {
               full_name: fullName,
               badge_number: badgeNumber,
-              role: UserRole.EMPLOYEE,
+              auth_email: email, // Provide email for the backend trigger
+              // Role must be set by a server-side trigger, not from the client.
             },
           },
         });
 
         if (signUpError) throw signUpError;
-        
-        // We also store the generated email in profiles for login purposes.
-        if (data.user) {
-            const { error: profileError } = await supabase
-              .from('profiles')
-              .update({ auth_email: email })
-              .eq('id', data.user.id);
-
-            if (profileError) {
-              // If this fails, we should ideally roll back the user creation
-              // For now, we log the error
-              console.error("Failed to update profile with email:", profileError);
-            }
-        }
       }
     } catch (err: any) {
       setError(err.message || 'Ocorreu um erro.');
@@ -134,4 +120,3 @@ const Auth: React.FC = () => {
 };
 
 export default Auth;
-
