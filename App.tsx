@@ -1,34 +1,25 @@
 
 import React from 'react';
-import { AuthProvider, useAuth } from './hooks/useAuth';
-import Auth from './components/Auth';
+import { useAuth } from './hooks/useAuth';
+import Login from './components/Login';
 import Dashboard from './components/Dashboard';
-import { LoadingSpinner } from './components/ui';
 
 const App: React.FC = () => {
-  return (
-    <AuthProvider>
-      <Main />
-    </AuthProvider>
-  );
-};
-
-const Main: React.FC = () => {
-  const { session, user, loading } = useAuth();
+  const { session, profile, loading, logout } = useAuth();
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-900">
-        <LoadingSpinner />
+      <div className="flex items-center justify-center h-screen bg-gray-100 dark:bg-gray-900">
+        <div className="w-16 h-16 border-4 border-dashed rounded-full animate-spin border-blue-600"></div>
       </div>
     );
   }
 
-  return (
-    <div className="min-h-screen bg-gray-900 text-gray-100">
-      {!session || !user ? <Auth /> : <Dashboard />}
-    </div>
-  );
+  if (!session || !profile) {
+    return <Login />;
+  }
+
+  return <Dashboard profile={profile} logout={logout} />;
 };
 
 export default App;

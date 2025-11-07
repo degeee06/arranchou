@@ -1,32 +1,32 @@
 
-export enum UserRole {
-  EMPLOYEE = 'Employee',
-  ADMIN = 'Admin',
-}
+import { User } from '@supabase/supabase-js';
 
 export enum AttendanceStatus {
-  PRESENT = 'present',
-  ABSENT = 'absent',
-  UNMARKED = 'unmarked',
+  Pendente = 'Pendente',
+  Confirmado = 'Confirmado',
+  Falta = 'Falta',
+  Ausente = 'Ausente',
 }
 
-export interface UserProfile {
+export interface Profile {
   id: string;
-  full_name: string;
   badge_number: string;
-  role: UserRole;
+  full_name: string;
+  role: 'admin' | 'employee';
 }
 
-export interface AttendanceRecord {
-  id: string;
+export interface Attendance {
+  id: number;
   user_id: string;
-  date: string; // YYYY-MM-DD
+  date: string;
   status: AttendanceStatus;
-  week_start_date: string;
-  profiles: UserProfile; // Joined data
+  updated_at: string;
+  profiles?: Profile; // Optional, for joined queries
 }
 
-export interface WeekData {
-  week_start_date: string;
-  records: AttendanceRecord[];
+export interface AuthContextType {
+  user: User | null;
+  profile: Profile | null;
+  loading: boolean;
+  logout: () => Promise<void>;
 }

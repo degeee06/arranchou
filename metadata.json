@@ -1,5 +1,5 @@
 {
-  "name": "Arranchou",
-  "description": "A comprehensive weekly attendance management application designed for employees and administrators, featuring real-time updates, history tracking, user management, and offline capabilities.",
+  "name": "Sistema de Confirmação de Almoço",
+  "description": "Um sistema para funcionários confirmarem presença no almoço diário, com painel administrativo para gerenciamento de usuários e status de presença.",
   "requestFramePermissions": []
 }

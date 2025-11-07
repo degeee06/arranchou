@@ -1,114 +1,137 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../services/supabase';
-import { useAuth } from '../hooks/useAuth';
-import { AttendanceRecord, AttendanceStatus } from '../types';
-import { getWeekStartDate, getWeekDates, formatDate, formatDisplayDate } from '../utils/helpers';
-import { LoadingSpinner, CheckIcon } from './ui';
+import { Profile, Attendance, AttendanceStatus } from '../types';
+import { generateHistoryPDF } from '../utils/pdfGenerator';
 
-const EmployeeDashboard: React.FC = () => {
-  const { user } = useAuth();
-  const [weekDates, setWeekDates] = useState<Date[]>([]);
-  const [attendance, setAttendance] = useState<Map<string, AttendanceStatus>>(new Map());
+interface EmployeeDashboardProps {
+  profile: Profile;
+}
+
+const statusConfig = {
+    [AttendanceStatus.Pendente]: { text: 'Pendente', color: 'bg-yellow-100 text-yellow-800', icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' },
+    [AttendanceStatus.Confirmado]: { text: 'Confirmado', color: 'bg-green-100 text-green-800', icon: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z' },
+    [AttendanceStatus.Falta]: { text: 'Falta', color: 'bg-red-100 text-red-800', icon: 'M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z' },
+    [AttendanceStatus.Ausente]: { text: 'Ausente', color: 'bg-gray-100 text-gray-800', icon: 'M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636' },
+};
+
+const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ profile }) => {
+  const [todayAttendance, setTodayAttendance] = useState<Attendance | null>(null);
+  const [history, setHistory] = useState<Attendance[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  
+  const getTodayString = () => new Date().toISOString().split('T')[0];
 
   const fetchAttendance = useCallback(async () => {
-    if (!user) return;
     setLoading(true);
-    const today = new Date();
-    const startDate = getWeekStartDate(today);
-    const dates = getWeekDates(startDate);
-    setWeekDates(dates);
+    const today = getTodayString();
     
-    const startDateString = formatDate(startDate);
-    const endDateString = formatDate(dates[6]);
-
-    const { data, error } = await supabase
+    // Fetch today's attendance
+    const { data: todayData, error: todayError } = await supabase
       .from('attendance')
-      .select('date, status')
-      .eq('user_id', user.id)
-      .gte('date', startDateString)
-      .lte('date', endDateString);
+      .select('*')
+      .eq('user_id', profile.id)
+      .eq('date', today)
+      .maybeSingle();
 
-    if (error) {
-      setError('Erro ao carregar dados de presença.');
-      console.error(error);
+    if (todayError) console.error("Error fetching today's attendance:", todayError.message);
+    else if (!todayData) {
+      // If no record for today, create one
+      const { data: newData } = await supabase.from('attendance').insert({ user_id: profile.id, date: today, status: AttendanceStatus.Pendente }).select().single();
+      setTodayAttendance(newData);
     } else {
-      const attendanceMap = new Map<string, AttendanceStatus>();
-      data.forEach(record => {
-        attendanceMap.set(record.date, record.status as AttendanceStatus);
-      });
-      setAttendance(attendanceMap);
+      setTodayAttendance(todayData);
     }
+    
+    // Fetch history
+    const { data: historyData, error: historyError } = await supabase
+      .from('attendance')
+      .select('*')
+      .eq('user_id', profile.id)
+      .order('date', { ascending: false });
+      
+    if (historyError) console.error("Error fetching history:", historyError.message);
+    else setHistory(historyData || []);
+
     setLoading(false);
-  }, [user]);
+  }, [profile.id]);
 
   useEffect(() => {
     fetchAttendance();
   }, [fetchAttendance]);
 
-  const handleToggleAttendance = async (date: Date) => {
-    if (!user) return;
-
-    const dateString = formatDate(date);
-    const currentStatus = attendance.get(dateString);
-    const newStatus = currentStatus === AttendanceStatus.PRESENT ? AttendanceStatus.UNMARKED : AttendanceStatus.PRESENT;
-
-    const { error } = await supabase
+  const updateStatus = async (status: AttendanceStatus) => {
+    if (!todayAttendance) return;
+    const { data, error } = await supabase
       .from('attendance')
-      .upsert({
-        user_id: user.id,
-        date: dateString,
-        status: newStatus,
-        week_start_date: formatDate(getWeekStartDate(date))
-      }, { onConflict: 'user_id, date' });
+      .update({ status })
+      .eq('id', todayAttendance.id)
+      .select()
+      .single();
 
     if (error) {
-      alert('Não foi possível atualizar a presença.');
+      console.error('Error updating status:', error);
     } else {
-      const newAttendance = new Map(attendance);
-      newAttendance.set(dateString, newStatus);
-      setAttendance(newAttendance);
+      setTodayAttendance(data);
+      // Also update history view
+      setHistory(prev => prev.map(h => h.id === data.id ? data : h));
     }
   };
   
-  const todayString = formatDate(new Date());
-
-  if (loading) {
-    return <div className="flex justify-center p-8"><LoadingSpinner /></div>;
-  }
-  
-  if (error) {
-    return <div className="text-center text-red-400 p-8">{error}</div>
-  }
+  const currentStatus = todayAttendance?.status || AttendanceStatus.Pendente;
+  const config = statusConfig[currentStatus];
 
   return (
-    <div className="bg-gray-800 p-6 rounded-lg shadow-lg">
-      <h2 className="text-xl font-semibold mb-4 text-white">Minha Semana</h2>
-      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-4">
-        {weekDates.map(date => {
-          const dateString = formatDate(date);
-          const isPast = dateString < todayString;
-          const status = attendance.get(dateString);
-          const isPresent = status === AttendanceStatus.PRESENT;
+    <div className="space-y-6">
+      <div className="bg-white dark:bg-gray-800 shadow-lg rounded-xl p-6">
+        <h2 className="text-xl font-bold mb-4">Seu status para o almoço de hoje:</h2>
+        {loading ? (
+            <div className="h-10 bg-gray-200 rounded animate-pulse w-1/2"></div>
+        ) : (
+        <div className={`inline-flex items-center px-4 py-2 rounded-full text-lg font-semibold ${config.color}`}>
+          <svg className="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={config.icon}></path></svg>
+          {config.text}
+        </div>
+        )}
+        <div className="mt-6 flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-3">
+          <button onClick={() => updateStatus(AttendanceStatus.Confirmado)} className="flex-1 justify-center inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:bg-green-400" disabled={currentStatus === AttendanceStatus.Confirmado}>Confirmar Presença</button>
+          <button onClick={() => updateStatus(AttendanceStatus.Ausente)} className="flex-1 justify-center inline-flex items-center px-6 py-3 border border-gray-300 dark:border-gray-600 text-base font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">Informar Ausência</button>
+        </div>
+      </div>
 
-          return (
-            <button
-              key={dateString}
-              disabled={isPast}
-              onClick={() => handleToggleAttendance(date)}
-              className={`p-4 rounded-lg text-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed
-                ${isPast ? 'bg-gray-700' : 'bg-gray-700 hover:bg-gray-600'}
-                ${isPresent ? 'ring-2 ring-green-500' : ''}`}
-            >
-              <p className="font-bold text-lg">{formatDisplayDate(date)}</p>
-              <div className="mt-2 h-8 flex items-center justify-center">
-                 {isPresent && <CheckIcon className="h-8 w-8 text-green-400" />}
-              </div>
-            </button>
-          );
-        })}
+      <div className="bg-white dark:bg-gray-800 shadow-lg rounded-xl p-6">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-bold">Seu Histórico</h2>
+          <button 
+            onClick={() => generateHistoryPDF(history, profile.full_name)}
+            className="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5 mr-2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+            Baixar PDF
+          </button>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+            <thead className="bg-gray-50 dark:bg-gray-700">
+              <tr>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Data</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+              {history.map(record => (
+                <tr key={record.id}>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{new Date(record.date + 'T00:00:00').toLocaleDateString('pt-BR')}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm">
+                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${statusConfig[record.status].color}`}>
+                      {statusConfig[record.status].text}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

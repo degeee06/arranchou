@@ -1,382 +1,266 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../services/supabase';
-import { UserProfile, AttendanceRecord, AttendanceStatus, WeekData, UserRole } from '../types';
-import { getWeekStartDate, getWeekDates, formatDate, formatDisplayDate, generatePdfReport } from '../utils/helpers';
-import { LoadingSpinner, Button, Tabs, Modal, DownloadIcon, ChevronDownIcon, CheckIcon, XIcon, UsersIcon } from './ui';
+import { Profile, Attendance, AttendanceStatus } from '../types';
+import { generateAdminHistoryPDF } from '../utils/pdfGenerator';
 
-// --- Current Week Tab ---
-const CurrentWeekTab: React.FC<{ users: UserProfile[] }> = ({ users }) => {
-    const [weekDates, setWeekDates] = useState<Date[]>([]);
-    const [attendance, setAttendance] = useState<Map<string, AttendanceRecord>>(new Map());
-    const [loading, setLoading] = useState(true);
-    const [isSubstituteModalOpen, setSubstituteModalOpen] = useState(false);
-    const [substituteInfo, setSubstituteInfo] = useState<{ userId: string; date: string } | null>(null);
-    const [selectedSubstitute, setSelectedSubstitute] = useState<string>('');
+interface AdminDashboardProps {
+  profile: Profile;
+}
 
-    const fetchAttendance = useCallback(async () => {
-        setLoading(true);
-        const today = new Date();
-        const startDate = getWeekStartDate(today);
-        const dates = getWeekDates(startDate);
-        setWeekDates(dates);
-        const startDateString = formatDate(startDate);
+const statusOptions: AttendanceStatus[] = [
+  AttendanceStatus.Pendente,
+  AttendanceStatus.Confirmado,
+  AttendanceStatus.Ausente,
+  AttendanceStatus.Falta,
+];
 
-        const { data, error } = await supabase
-            .from('attendance')
-            .select('*, profiles(*)')
-            .eq('week_start_date', startDateString);
+const roleOptions: ('admin' | 'employee')[] = ['admin', 'employee'];
 
-        if (error) {
-            console.error(error);
-        } else {
-            const attendanceMap = new Map<string, AttendanceRecord>();
-            data.forEach(record => {
-                attendanceMap.set(`${record.user_id}-${record.date}`, record as AttendanceRecord);
-            });
-            setAttendance(attendanceMap);
-        }
-        setLoading(false);
-    }, []);
+type AdminAttendanceRecord = Attendance & { profiles: { full_name: string } | null };
 
-    useEffect(() => {
-        fetchAttendance();
+const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile }) => {
+  const [users, setUsers] = useState<Profile[]>([]);
+  const [attendance, setAttendance] = useState<AdminAttendanceRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [activeTab, setActiveTab] = useState('today'); // 'today', 'history', 'users'
 
-        const subscription = supabase
-            .channel('public:attendance')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, payload => {
-                // Refetch data when a change is detected from another client
-                fetchAttendance();
-            })
-            .subscribe();
+  const getTodayString = () => new Date().toISOString().split('T')[0];
 
-        return () => {
-            supabase.removeChannel(subscription);
-        };
-    }, [fetchAttendance]);
+  const fetchData = useCallback(async () => {
+    setLoading(true);
     
-    const handleStatusChange = async (userId: string, date: Date, status: AttendanceStatus) => {
-        const dateString = formatDate(date);
-        
-        // Upsert the record and select the result to get the full record back
-        const { data, error } = await supabase
-            .from('attendance')
-            .upsert({
-                user_id: userId,
-                date: dateString,
-                status: status,
-                week_start_date: formatDate(getWeekStartDate(date))
-            }, { onConflict: 'user_id, date' })
-            .select('*, profiles(*)') // Return the full record with profile
-            .single();
+    const { data: usersData, error: usersError } = await supabase.from('profiles').select('*').order('full_name');
+    if (usersError) console.error("Error fetching users:", usersError);
+    else setUsers(usersData || []);
 
-        if (error) {
-            console.error('Error updating attendance:', error);
-            alert('Falha ao atualizar a presença.');
-        } else if (data) {
-            // Update the local state immediately with the new record
-            // This makes the UI responsive for the admin making the change.
-            const newRecord = data as AttendanceRecord;
-            const key = `${newRecord.user_id}-${newRecord.date}`;
-            
-            setAttendance(prevAttendance => {
-                const newAttendanceMap = new Map(prevAttendance);
-                newAttendanceMap.set(key, newRecord);
-                return newAttendanceMap;
-            });
-        }
-    };
+    const { data: attendanceData, error: attendanceError } = await supabase.from('attendance').select('*, profiles(full_name)').order('date', { ascending: false });
+    if (attendanceError) console.error("Error fetching attendance:", attendanceError);
+    else setAttendance(attendanceData as AdminAttendanceRecord[] || []);
 
-    const openSubstituteModal = (userId: string, date: string) => {
-        setSubstituteInfo({ userId, date });
-        setSelectedSubstitute('');
-        setSubstituteModalOpen(true);
-    };
-
-    const handleSubstitute = async () => {
-        if (!substituteInfo || !selectedSubstitute) return;
-
-        const { userId, date } = substituteInfo;
-
-        // Using an RPC call to handle the transaction on the backend is safer
-        const { error } = await supabase.rpc('perform_substitution', {
-            original_user_id: userId,
-            substitute_user_id: selectedSubstitute,
-            attendance_date: date,
-            p_week_start_date: formatDate(getWeekStartDate(new Date(date)))
-        });
-
-
-        if (error) {
-            alert('Falha ao realizar substituição.');
-            console.error(error);
-        }
-
-        setSubstituteModalOpen(false);
-        setSubstituteInfo(null);
-    };
-
-    if (loading) return <div className="flex justify-center p-8"><LoadingSpinner /></div>;
-    
-    return (
-        <div className="overflow-x-auto bg-gray-800 p-4 rounded-lg">
-            <table className="min-w-full divide-y divide-gray-700">
-                <thead className="bg-gray-700">
-                    <tr>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Funcionário</th>
-                        {weekDates.map(date => (
-                            <th key={formatDate(date)} className="px-4 py-3 text-center text-xs font-medium text-gray-300 uppercase tracking-wider">
-                                {formatDisplayDate(date)}
-                            </th>
-                        ))}
-                    </tr>
-                </thead>
-                <tbody className="bg-gray-800 divide-y divide-gray-700">
-                    {users.map(user => (
-                        <tr key={user.id}>
-                            <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-white">{user.full_name}</td>
-                            {weekDates.map(date => {
-                                const dateString = formatDate(date);
-                                const record = attendance.get(`${user.id}-${dateString}`);
-                                return (
-                                    <td key={dateString} className="px-4 py-3 whitespace-nowrap text-sm text-center">
-                                        <div className="flex items-center justify-center space-x-1">
-                                            <button onClick={() => handleStatusChange(user.id, date, AttendanceStatus.PRESENT)} className={`p-1 rounded-full ${record?.status === AttendanceStatus.PRESENT ? 'bg-green-500 text-white' : 'text-gray-400 hover:bg-gray-600'}`}><CheckIcon className="h-4 w-4"/></button>
-                                            <button onClick={() => handleStatusChange(user.id, date, AttendanceStatus.ABSENT)} className={`p-1 rounded-full ${record?.status === AttendanceStatus.ABSENT ? 'bg-red-500 text-white' : 'text-gray-400 hover:bg-gray-600'}`}><XIcon className="h-4 w-4"/></button>
-                                            <button onClick={() => openSubstituteModal(user.id, dateString)} className={`p-1 rounded-full text-gray-400 hover:bg-gray-600`}><UsersIcon className="h-4 w-4" /></button>
-                                        </div>
-                                    </td>
-                                );
-                            })}
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
-            
-            <Modal isOpen={isSubstituteModalOpen} onClose={() => setSubstituteModalOpen(false)} title="Substituir Funcionário">
-                <div className="space-y-4">
-                    <p>Selecione um funcionário para substituir {users.find(u => u.id === substituteInfo?.userId)?.full_name} em {substituteInfo?.date}.</p>
-                    <select
-                        value={selectedSubstitute}
-                        onChange={(e) => setSelectedSubstitute(e.target.value)}
-                        className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                        <option value="">Selecione...</option>
-                        {users.filter(u => u.id !== substituteInfo?.userId).map(user => (
-                            <option key={user.id} value={user.id}>{user.full_name}</option>
-                        ))}
-                    </select>
-                    <div className="flex justify-end space-x-2">
-                        <Button variant="secondary" onClick={() => setSubstituteModalOpen(false)}>Cancelar</Button>
-                        <Button onClick={handleSubstitute} disabled={!selectedSubstitute}>Confirmar</Button>
-                    </div>
-                </div>
-            </Modal>
-        </div>
-    );
-};
-
-
-// --- History Tab ---
-const HistoryTab: React.FC<{ users: UserProfile[] }> = ({ users }) => {
-    const [history, setHistory] = useState<WeekData[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [expandedWeek, setExpandedWeek] = useState<string | null>(null);
-
-    useEffect(() => {
-        const fetchHistory = async () => {
-            const { data, error } = await supabase
-                .from('attendance')
-                .select('*, profiles(*)')
-                .order('week_start_date', { ascending: false });
-
-            if (error) {
-                console.error(error);
-            } else {
-                const groupedByWeek: { [key: string]: AttendanceRecord[] } = {};
-                (data as AttendanceRecord[]).forEach(record => {
-                    if (!groupedByWeek[record.week_start_date]) {
-                        groupedByWeek[record.week_start_date] = [];
-                    }
-                    groupedByWeek[record.week_start_date].push(record);
-                });
-
-                const weekData: WeekData[] = Object.keys(groupedByWeek).map(weekStartDate => ({
-                    week_start_date: weekStartDate,
-                    records: groupedByWeek[weekStartDate],
-                })).sort((a, b) => new Date(b.week_start_date).getTime() - new Date(a.week_start_date).getTime());
-                setHistory(weekData);
-            }
-            setLoading(false);
-        };
-        fetchHistory();
-    }, []);
-    
-    if (loading) return <div className="flex justify-center p-8"><LoadingSpinner /></div>;
-
-    return (
-        <div className="space-y-4">
-            {history.map(week => {
-                 const weekStartDate = new Date(week.week_start_date);
-                 const weekDates = getWeekDates(weekStartDate);
-                 const isExpanded = expandedWeek === week.week_start_date;
-                return (
-                    <div key={week.week_start_date} className="bg-gray-800 rounded-lg">
-                        <button 
-                            onClick={() => setExpandedWeek(isExpanded ? null : week.week_start_date)}
-                            className="w-full flex justify-between items-center p-4 text-left"
-                        >
-                            <span className="font-semibold">Semana de {weekStartDate.toLocaleDateString('pt-BR')}</span>
-                             <div className="flex items-center gap-4">
-                                <Button
-                                    variant="secondary"
-                                    onClick={(e) => { e.stopPropagation(); generatePdfReport(week, users); }}
-                                    className="flex items-center gap-2"
-                                >
-                                    <DownloadIcon /> PDF
-                                </Button>
-                                <ChevronDownIcon className={`transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
-                             </div>
-                        </button>
-                        {isExpanded && (
-                             <div className="p-4 border-t border-gray-700 overflow-x-auto">
-                                <table className="min-w-full divide-y divide-gray-700">
-                                     <thead className="bg-gray-700">
-                                        <tr>
-                                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Funcionário</th>
-                                            {weekDates.map(d => <th key={formatDate(d)} className="px-4 py-3 text-center text-xs font-medium text-gray-300 uppercase tracking-wider">{formatDisplayDate(d)}</th>)}
-                                        </tr>
-                                    </thead>
-                                    <tbody className="bg-gray-800 divide-y divide-gray-700">
-                                    {users.map(user => (
-                                        <tr key={user.id}>
-                                            <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-white">{user.full_name}</td>
-                                            {weekDates.map(date => {
-                                                const record = week.records.find(r => r.user_id === user.id && r.date === formatDate(date));
-                                                let statusChar = <span className="text-gray-500">-</span>;
-                                                if (record?.status === AttendanceStatus.PRESENT) statusChar = <CheckIcon className="h-5 w-5 text-green-400 mx-auto"/>;
-                                                if (record?.status === AttendanceStatus.ABSENT) statusChar = <XIcon className="h-5 w-5 text-red-400 mx-auto"/>;
-                                                return <td key={formatDate(date)} className="px-4 py-3 text-center">{statusChar}</td>
-                                            })}
-                                        </tr>
-                                    ))}
-                                    </tbody>
-                                </table>
-                             </div>
-                        )}
-                    </div>
-                );
-            })}
-        </div>
-    );
-};
-
-// --- Manage Users Tab ---
-const ManageUsersTab: React.FC<{ users: UserProfile[], fetchUsers: () => void }> = ({ users, fetchUsers }) => {
-    const [loading, setLoading] = useState(false);
-    const [userToDelete, setUserToDelete] = useState<UserProfile | null>(null);
-
-    const handleRoleChange = async (user: UserProfile) => {
-        setLoading(true);
-        const newRole = user.role === UserRole.ADMIN ? UserRole.EMPLOYEE : UserRole.ADMIN;
-        
-        // This should be an Edge Function for security
-        const { error } = await supabase.functions.invoke('set-user-role', {
-            body: { user_id: user.id, role: newRole }
-        });
-        
-        if (error) {
-            alert('Erro ao alterar permissão: ' + error.message);
-        } else {
-            fetchUsers();
-        }
-        setLoading(false);
-    };
-
-    const handleDeleteUser = async () => {
-        if (!userToDelete) return;
-        setLoading(true);
-
-        // This should be an Edge Function for security
-        const { error } = await supabase.functions.invoke('delete-user', {
-            body: { user_id: userToDelete.id }
-        });
-
-        if (error) {
-            alert('Erro ao remover usuário: ' + error.message);
-        } else {
-            fetchUsers();
-            setUserToDelete(null);
-        }
-        setLoading(false);
-    };
-    
-    return (
-        <div className="bg-gray-800 rounded-lg shadow p-4">
-            <ul className="divide-y divide-gray-700">
-                {users.map(user => (
-                    <li key={user.id} className="py-3 flex items-center justify-between">
-                        <div>
-                            <p className="font-medium text-white">{user.full_name}</p>
-                            <p className="text-sm text-gray-400">{user.badge_number} - {user.role}</p>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                             <Button variant="secondary" onClick={() => handleRoleChange(user)} disabled={loading}>
-                                {user.role === UserRole.ADMIN ? 'Rebaixar' : 'Promover'}
-                             </Button>
-                             <Button variant="danger" onClick={() => setUserToDelete(user)} disabled={loading}>Remover</Button>
-                        </div>
-                    </li>
-                ))}
-            </ul>
-
-            <Modal isOpen={!!userToDelete} onClose={() => setUserToDelete(null)} title="Confirmar Remoção">
-                <p>Tem certeza que deseja remover permanentemente o usuário <strong>{userToDelete?.full_name}</strong>? Esta ação não pode ser desfeita.</p>
-                <div className="flex justify-end space-x-2 mt-4">
-                    <Button variant="secondary" onClick={() => setUserToDelete(null)}>Cancelar</Button>
-                    <Button variant="danger" onClick={handleDeleteUser} disabled={loading}>
-                        {loading ? 'Removendo...' : 'Remover'}
-                    </Button>
-                </div>
-            </Modal>
-        </div>
-    );
-};
-
-// --- Admin Dashboard ---
-const AdminDashboard: React.FC = () => {
-  const [activeTab, setActiveTab] = useState('Semana Atual');
-  const [users, setUsers] = useState<UserProfile[]>([]);
-  const [loadingUsers, setLoadingUsers] = useState(true);
-
-  const fetchUsers = useCallback(async () => {
-        setLoadingUsers(true);
-        const { data, error } = await supabase
-            .from('profiles')
-            .select('*')
-            .order('full_name');
-        
-        if (data) setUsers(data as UserProfile[]);
-        setLoadingUsers(false);
+    setLoading(false);
   }, []);
 
   useEffect(() => {
-    fetchUsers();
-  }, [fetchUsers]);
+    fetchData();
+  }, [fetchData]);
+  
+  const handleStatusChange = async (userId: string, date: string, newStatus: AttendanceStatus) => {
+    const existingRecord = attendance.find(a => a.user_id === userId && a.date === date);
+    
+    let result;
+    if (existingRecord) {
+        result = await supabase.from('attendance').update({ status: newStatus }).eq('id', existingRecord.id).select('*, profiles(full_name)').single();
+    } else {
+        result = await supabase.from('attendance').insert({ user_id: userId, date, status: newStatus }).select('*, profiles(full_name)').single();
+    }
+    
+    const { data, error } = result;
 
-  const TABS = ['Semana Atual', 'Histórico', 'Gerenciar Usuários'];
+    if (error) {
+        console.error('Error updating status:', error);
+        alert('Falha ao atualizar o status.');
+    } else if (data) {
+        const newRecord = data as AdminAttendanceRecord;
+        setAttendance(prev => {
+            const index = prev.findIndex(a => a.id === newRecord.id);
+            if (index > -1) {
+                const newAttendance = [...prev];
+                newAttendance[index] = newRecord;
+                return newAttendance;
+            } else {
+                return [newRecord, ...prev].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+            }
+        });
+    }
+  };
+
+  const handleRoleChange = async (userId: string, newRole: 'admin' | 'employee') => {
+    if (userId === profile.id && newRole === 'employee') {
+      alert("Você não pode remover seu próprio acesso de administrador.");
+      return;
+    }
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({ role: newRole })
+      .eq('id', userId);
+    
+    if (error) {
+      console.error('Error updating role:', error);
+      alert('Erro ao atualizar o cargo do usuário.');
+    } else {
+      setUsers(prevUsers => prevUsers.map(u => u.id === userId ? { ...u, role: newRole } : u));
+      alert('Cargo do usuário atualizado com sucesso!');
+    }
+  };
+
+  const today = getTodayString();
+  const todayAttendanceMap = new Map<string, AdminAttendanceRecord>();
+  attendance.filter(a => a.date === today).forEach(a => {
+      todayAttendanceMap.set(a.user_id, a);
+  });
+
+  const filteredUsers = users.filter(user => 
+    user.full_name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const filteredHistory = attendance.filter(record => 
+    record.profiles?.full_name?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const TabButton = ({ tabName, label }: { tabName: string; label: string }) => {
+    const isActive = activeTab === tabName;
+    return (
+        <button
+            onClick={() => setActiveTab(tabName)}
+            className={`${
+                isActive
+                ? 'border-blue-500 text-blue-600 dark:border-blue-400 dark:text-blue-300'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-200 dark:hover:border-gray-600'
+            } whitespace-nowrap py-4 px-3 border-b-2 font-medium text-sm transition-colors focus:outline-none`}
+        >
+            {label}
+        </button>
+    )
+  };
+
+  const renderContent = () => {
+    if (loading) {
+      return (
+        <div className="flex items-center justify-center h-48">
+            <div className="w-8 h-8 border-4 border-dashed rounded-full animate-spin border-blue-600"></div>
+        </div>
+      );
+    }
+    switch (activeTab) {
+      case 'today':
+        return (
+          <div className="overflow-x-auto mt-6">
+            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+              <thead className="bg-gray-50 dark:bg-gray-700">
+                <tr>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Funcionário</th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status de Hoje</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                {filteredUsers.map(user => {
+                  const userAttendance = todayAttendanceMap.get(user.id);
+                  const currentStatus = userAttendance?.status || AttendanceStatus.Pendente;
+                  return (
+                    <tr key={user.id}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{user.full_name}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <select
+                          value={currentStatus}
+                          onChange={(e) => handleStatusChange(user.id, today, e.target.value as AttendanceStatus)}
+                          className="block w-full max-w-xs pl-3 pr-10 py-2 text-base border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md bg-gray-50 dark:bg-gray-700 dark:text-white"
+                        >
+                          {statusOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                        </select>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        );
+      case 'history':
+        const printableHistory = filteredHistory.filter(h => h.profiles) as (Attendance & { profiles: { full_name: string } })[];
+        return (
+          <div className="mt-6">
+            <div className="flex justify-end mb-4">
+              <button
+                onClick={() => generateAdminHistoryPDF(printableHistory)}
+                className="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5 mr-2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+                Baixar Relatório PDF
+              </button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                <thead className="bg-gray-50 dark:bg-gray-700">
+                    <tr>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Data</th>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Funcionário</th>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
+                    </tr>
+                </thead>
+                <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                  {filteredHistory.map(record => (
+                     <tr key={record.id}>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{new Date(record.date + 'T00:00:00').toLocaleDateString('pt-BR')}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{record.profiles?.full_name || 'N/A'}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{record.status}</td>
+                     </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      case 'users':
+        return (
+            <div className="overflow-x-auto mt-6">
+              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                  <thead className="bg-gray-50 dark:bg-gray-700">
+                      <tr>
+                          <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Funcionário</th>
+                          <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Crachá</th>
+                          <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Cargo</th>
+                      </tr>
+                  </thead>
+                  <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                      {filteredUsers.map(user => (
+                          <tr key={user.id}>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{user.full_name}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{user.badge_number}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                  <select
+                                      value={user.role}
+                                      onChange={(e) => handleRoleChange(user.id, e.target.value as 'admin' | 'employee')}
+                                      className="block w-full max-w-xs pl-3 pr-10 py-2 text-base border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md bg-gray-50 dark:bg-gray-700 dark:text-white"
+                                      disabled={user.id === profile.id}
+                                  >
+                                      {roleOptions.map(opt => <option key={opt} value={opt}>{opt === 'admin' ? 'Administrador' : 'Funcionário'}</option>)}
+                                  </select>
+                              </td>
+                          </tr>
+                      ))}
+                  </tbody>
+              </table>
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
+
 
   return (
-    <div className="space-y-6">
-      <Tabs tabs={TABS} activeTab={activeTab} setActiveTab={setActiveTab} />
-      <div>
-        {loadingUsers ? <div className="flex justify-center p-8"><LoadingSpinner /></div> : (
-             <>
-                {activeTab === 'Semana Atual' && <CurrentWeekTab users={users} />}
-                {activeTab === 'Histórico' && <HistoryTab users={users} />}
-                {activeTab === 'Gerenciar Usuários' && <ManageUsersTab users={users} fetchUsers={fetchUsers} />}
-             </>
-        )}
+    <div className="bg-white dark:bg-gray-800 shadow-lg rounded-xl p-6">
+      <div className="border-b border-gray-200 dark:border-gray-700">
+          <nav className="-mb-px flex space-x-8" aria-label="Tabs">
+              <TabButton tabName='today' label='Presença de Hoje' />
+              <TabButton tabName='history' label='Histórico Geral' />
+              <TabButton tabName='users' label='Gerenciar Usuários' />
+          </nav>
       </div>
+      
+      <div className="mt-6">
+          <input 
+              type="text" 
+              placeholder="Buscar por nome do funcionário..." 
+              value={searchTerm} 
+              onChange={e => setSearchTerm(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm bg-gray-50 dark:bg-gray-700 focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:text-white"
+          />
+      </div>
+
+      {renderContent()}
     </div>
   );
 };
