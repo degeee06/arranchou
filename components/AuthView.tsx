@@ -91,8 +91,10 @@ const AuthView: React.FC = () => {
         }
     };
     
-    const toggleMode = () => {
-        setIsSignUp(!isSignUp);
+    const setAuthMode = (newModeIsSignUp: boolean) => {
+        if (isSignUp === newModeIsSignUp) return; // Do nothing if already in this mode
+
+        setIsSignUp(newModeIsSignUp);
         setError(null);
         setMessage(null);
         setEmployeeId('');
@@ -108,10 +110,10 @@ const AuthView: React.FC = () => {
             </div>
             <div className="w-full max-w-sm mx-auto bg-gray-800 p-8 rounded-lg shadow-lg">
                 <div className="mb-4 flex border-b border-gray-700">
-                    <button onClick={() => !isSignUp && toggleMode()} className={`w-1/2 py-2 font-semibold ${!isSignUp ? 'text-brand-primary border-b-2 border-brand-primary' : 'text-gray-400'}`}>
+                    <button onClick={() => setAuthMode(false)} className={`w-1/2 py-2 font-semibold ${!isSignUp ? 'text-brand-primary border-b-2 border-brand-primary' : 'text-gray-400'}`}>
                         Entrar
                     </button>
-                    <button onClick={() => isSignUp && toggleMode()} className={`w-1/2 py-2 font-semibold ${isSignUp ? 'text-brand-primary border-b-2 border-brand-primary' : 'text-gray-400'}`}>
+                    <button onClick={() => setAuthMode(true)} className={`w-1/2 py-2 font-semibold ${isSignUp ? 'text-brand-primary border-b-2 border-brand-primary' : 'text-gray-400'}`}>
                         Cadastrar
                     </button>
                 </div>
