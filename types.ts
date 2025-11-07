@@ -1,41 +1,32 @@
-export type DayKey = 'Segunda' | 'Terça' | 'Quarta' | 'Quinta' | 'Sexta' | 'Sábado' | 'Domingo';
 
-export interface Profile {
-  id: string; // uuid from auth.users
-  updated_at?: string;
+export enum UserRole {
+  EMPLOYEE = 'Employee',
+  ADMIN = 'Admin',
+}
+
+export enum AttendanceStatus {
+  PRESENT = 'present',
+  ABSENT = 'absent',
+  UNMARKED = 'unmarked',
+}
+
+export interface UserProfile {
+  id: string;
   full_name: string;
-  employee_id: string;
-  role: 'super_admin' | 'admin' | 'employee';
+  badge_number: string;
+  role: UserRole;
 }
 
 export interface AttendanceRecord {
-  id?: number;
+  id: string;
   user_id: string;
-  week_id: string;
-  day: DayKey;
-  is_present: boolean;
-  created_at?: string;
+  date: string; // YYYY-MM-DD
+  status: AttendanceStatus;
+  week_start_date: string;
+  profiles: UserProfile; // Joined data
 }
 
-// This will be the transformed structure for easier use in components
-export type Attendance = {
-  [personId: string]: {
-    [day in DayKey]?: boolean;
-  };
-};
-
-export interface HistoryEntry {
-  weekId: string;
-  people: Profile[];
-  attendance: Attendance;
-}
-
-// FIX: Add PredictionResult type for the predictive analysis feature.
-export interface PredictionResult {
-  predictions: {
-    day: DayKey;
-    predicted_attendees: number;
-  }[];
-  insight: string;
-  nextWeekId: string;
+export interface WeekData {
+  week_start_date: string;
+  records: AttendanceRecord[];
 }

@@ -1,5 +1,5 @@
 {
-  "name": " Arranchou Supabase",
-  "description": "Um aplicativo para gerenciar e rastrear a confirmação de refeições diárias para equipes. Funciona totalmente offline e permite backup, importação e exportação de dados em PDF.",
+  "name": "Arranchou",
+  "description": "A comprehensive weekly attendance management application designed for employees and administrators, featuring real-time updates, history tracking, user management, and offline capabilities.",
   "requestFramePermissions": []
 }

@@ -1,27 +1,26 @@
+
 {
-  "name": "Arranchou",
   "short_name": "Arranchou",
-  "description": "Um aplicativo para gerenciar e rastrear a confirmação de refeições diárias para equipes. Funciona totalmente offline e permite backup, importação e exportação de dados em PDF.",
-  "start_url": ".",
-  "display": "standalone",
-  "background_color": "#111827",
-  "theme_color": "#111827",
+  "name": "Arranchou - Gestão de Presença",
   "icons": [
     {
-      "src": "/icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "src": "https://www.gstatic.com/images/branding/product/1x/google_gemini_32dp.png",
+      "type": "image/png",
+      "sizes": "32x32"
     },
     {
-      "src": "/icon-192.png",
+      "src": "https://www.gstatic.com/images/branding/product/1x/google_gemini_192dp.png",
       "type": "image/png",
       "sizes": "192x192"
     },
     {
-      "src": "/icon-512.png",
+      "src": "https://www.gstatic.com/images/branding/product/1x/google_gemini_512dp.png",
       "type": "image/png",
       "sizes": "512x512"
     }
-  ]
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#1a202c",
+  "background_color": "#1a202c"
 }
