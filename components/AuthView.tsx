@@ -21,52 +21,20 @@ const AuthView: React.FC = () => {
 
         try {
             if (isSignUp) {
-                // Step 1: Create the authentication user first, without metadata.
-                const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+                const { error } = await supabase.auth.signUp({
                     email,
                     password,
-                    // We DO NOT pass metadata here to avoid the faulty trigger.
-                });
-
-                if (signUpError) {
-                    // Handle specific sign-up errors from the auth system itself.
-                    if (signUpError.message.includes("User already registered")) {
-                        throw new Error("Este Nº do Crachá já tem uma conta. Por favor, tente fazer o login.");
+                    options: {
+                        data: {
+                            full_name: fullName,
+                            employee_id: employeeId,
+                            role: 'employee',
+                        }
                     }
-                    throw signUpError;
-                }
-                
-                if (!signUpData.user) {
-                     throw new Error("O cadastro falhou: nenhum usuário foi retornado após a criação inicial.");
-                }
-
-                // Step 2: Manually insert the profile into the public.profiles table.
-                const { error: profileError } = await supabase.from('profiles').insert({
-                    id: signUpData.user.id,
-                    full_name: fullName,
-                    employee_id: employeeId,
-                    // The 'role' column has a default value of 'employee' in the database, so we don't need to specify it.
                 });
-
-                if (profileError) {
-                    console.error("Profile creation failed after sign up:", profileError);
-                    // This is a critical failure. We have an auth user without a profile.
-                    // The best we can do is inform the user clearly.
-                    if (profileError.message.includes('profiles_employee_id_key')) {
-                         throw new Error("Este Nº do Crachá já está em uso por outra pessoa. Por favor, use um número diferente.");
-                    }
-                    throw new Error("Seu login foi criado, mas houve um erro ao salvar seu perfil. Por favor, contate o suporte.");
-                }
-
-                // If both steps succeed:
-                setMessage('Cadastro realizado com sucesso! Você já pode entrar com seu Nº de Crachá e senha.');
-                setIsSignUp(false); // Switch back to login view for convenience
-                setFullName('');
-                setEmployeeId('');
-                setPassword('');
-
+                if (error) throw error;
+                setMessage('Cadastro realizado com sucesso! Você já pode entrar.');
             } else {
-                // Login logic remains unchanged
                 const { error } = await supabase.auth.signInWithPassword({
                     email,
                     password,
@@ -79,7 +47,55 @@ const AuthView: React.FC = () => {
 
             if (err.message.includes("Invalid login credentials")) {
                 setError("Nº do Crachá ou senha inválidos.");
-            } else {
+            } else if (err.message.includes('profiles_employee_id_key')) {
+                // This is the new, more robust check for the UNIQUE constraint on the database.
+                setError("Este Nº do Crachá já está cadastrado. Tente um número diferente ou faça login.");
+            } else if (err.message.includes("User already registered")) {
+                console.warn("User already exists in auth, but maybe not in profiles. Attempting login to recover.");
+                // This is our recovery logic for orphan auth users.
+                // If sign-up fails because the user exists, we try to sign in.
+                // If sign-in succeeds, it means their profile was missing. We recreate it.
+                try {
+                    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+                        email,
+                        password,
+                    });
+                    if (signInError) {
+                        // If sign-in fails here, it's a genuine wrong password for an existing user.
+                        setError("Este Nº do Crachá já está cadastrado. Se você já tem uma conta, a senha informada está incorreta.");
+                        return; // Stop execution
+                    }
+                    
+                    if (signInData.user) {
+                         // Sign-in successful, now check if profile exists before creating
+                        const { data: existingProfile } = await supabase.from('profiles').select('id').eq('id', signInData.user.id).single();
+                        
+                        if (!existingProfile) {
+                            const { error: profileError } = await supabase.from('profiles').insert({
+                                id: signInData.user.id,
+                                full_name: fullName,
+                                employee_id: employeeId,
+                                role: 'employee'
+                            });
+
+                            if (profileError) {
+                                console.error("Failed to recreate profile for orphan user:", profileError);
+                                setError("Falha ao recuperar conta. Tente novamente mais tarde.");
+                            } else {
+                                console.log("Successfully recovered and recreated profile for user:", signInData.user.id);
+                                // The onAuthStateChange listener will handle the successful login
+                            }
+                        } else {
+                           // This case is rare, but means the profile exists and the user should just log in.
+                           // The login already succeeded, so the listener will handle it.
+                           console.log("User has an auth entry and a profile. Login will proceed.");
+                        }
+                    }
+                } catch (recoveryErr: any) {
+                    setError("Ocorreu um erro inesperado durante a recuperação da conta. Tente fazer login.");
+                }
+            }
+            else {
                 setError(err.error_description || err.message);
             }
         } finally {
