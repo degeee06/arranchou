@@ -1,42 +1,41 @@
-import { User } from '@supabase/auth-js';
-
-// Fix: Add a global type definition for import.meta.env to fix TypeScript errors
-// related to Vite environment variables, as the vite/client types could not be found.
-declare global {
-  interface ImportMeta {
-    readonly env: {
-      readonly VITE_SUPABASE_URL: string;
-      readonly VITE_SUPABASE_ANON_KEY: string;
-    }
-  }
-}
-
-export enum AttendanceStatus {
-  Pendente = 'Pendente',
-  Confirmado = 'Confirmado',
-  Falta = 'Falta',
-  Ausente = 'Ausente',
-}
+export type DayKey = 'Segunda' | 'Terça' | 'Quarta' | 'Quinta' | 'Sexta' | 'Sábado' | 'Domingo';
 
 export interface Profile {
-  id: string;
-  badge_number: string;
+  id: string; // uuid from auth.users
+  updated_at?: string;
   full_name: string;
-  role: 'admin' | 'employee';
+  employee_id: string;
+  role: 'super_admin' | 'admin' | 'employee';
 }
 
-export interface Attendance {
-  id: number;
+export interface AttendanceRecord {
+  id?: number;
   user_id: string;
-  date: string;
-  status: AttendanceStatus;
-  updated_at: string;
-  profiles?: Profile; // Optional, for joined queries
+  week_id: string;
+  day: DayKey;
+  is_present: boolean;
+  created_at?: string;
 }
 
-export interface UseAuthReturn {
-  user: User | null;
-  profile: Profile | null;
-  loading: boolean;
-  logout: () => Promise<void>;
+// This will be the transformed structure for easier use in components
+export type Attendance = {
+  [personId: string]: {
+    [day in DayKey]?: boolean;
+  };
+};
+
+export interface HistoryEntry {
+  weekId: string;
+  people: Profile[];
+  attendance: Attendance;
+}
+
+// FIX: Add PredictionResult type for the predictive analysis feature.
+export interface PredictionResult {
+  nextWeekId: string;
+  predictions: {
+    day: DayKey;
+    predicted_attendees: number;
+  }[];
+  insight: string;
 }

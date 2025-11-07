@@ -1,0 +1,27 @@
+{
+  "name": "Arranchou",
+  "short_name": "Arranchou",
+  "description": "Um aplicativo para gerenciar e rastrear a confirmação de refeições diárias para equipes. Funciona totalmente offline e permite backup, importação e exportação de dados em PDF.",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#111827",
+  "theme_color": "#111827",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ]
+}
