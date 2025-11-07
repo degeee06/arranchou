@@ -20,59 +20,28 @@ const AuthView: React.FC = () => {
 
         try {
             if (isSignUp) {
-                // Step 1: Create the auth user.
+                // --- SIGN UP LOGIC ---
                 const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
                     email,
                     password,
                 });
 
                 if (signUpError) {
+                    // This error is common if the user tried to sign up, failed midway, and tries again.
                     if (signUpError.message.includes("User already registered")) {
-                        // This is a recovery path for users who exist in auth but might be missing a profile.
-                        console.warn("User already exists in auth, but maybe not in profiles. Attempting login to recover.");
-                        
-                        // Try to sign in to see if we can create the missing profile.
-                        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
-                        if (signInError) {
-                            throw new Error("Este Nº do Crachá já tem uma conta, mas a senha está incorreta. Tente fazer o login.");
-                        }
-
-                        if (signInData.user) {
-                            // User is signed in. Now, check if a profile exists.
-                            const { data: profileData, error: profileCheckError } = await supabase
-                                .from('profiles')
-                                .select('id')
-                                .eq('id', signInData.user.id)
-                                .maybeSingle();
-
-                            if (profileCheckError) throw profileCheckError;
-
-                            if (!profileData) {
-                                // Profile is missing! Create it.
-                                const { error: insertError } = await supabase.from('profiles').insert({
-                                    id: signInData.user.id,
-                                    full_name: fullName,
-                                    employee_id: employeeId,
-                                });
-
-                                if (insertError) {
-                                     throw new Error("Seu login foi recuperado, mas houve um erro ao salvar seu perfil. Contate o suporte.");
-                                }
-                                // Profile created successfully. The app will now reload with the new session.
-                                return;
-                            }
-                        }
-                        // If we are here, it means the user and profile already exist.
-                        throw new Error("Este Nº do Crachá já tem uma conta. Por favor, tente fazer o login.");
+                        setError("Este Nº do Crachá já está cadastrado. Tente fazer o login.");
+                    } else {
+                        throw signUpError;
                     }
-                    throw signUpError;
+                    setLoading(false);
+                    return;
                 }
                 
                 if (!signUpData.user) {
-                     throw new Error("O cadastro falhou: nenhum usuário foi retornado após a criação inicial.");
+                     throw new Error("O cadastro falhou: nenhum usuário foi retornado após a criação.");
                 }
 
-                // Step 2: Manually insert the profile for a brand new user.
+                // Manually insert the profile. This is the most reliable way.
                 const { error: profileError } = await supabase.from('profiles').insert({
                     id: signUpData.user.id,
                     full_name: fullName,
@@ -80,37 +49,55 @@ const AuthView: React.FC = () => {
                 });
 
                 if (profileError) {
-                    console.error("Profile creation failed after sign up:", profileError);
-                    if (profileError.message.includes('profiles_employee_id_key')) {
-                         throw new Error("Este Nº do Crachá já está em uso por outra pessoa. Por favor, use um número diferente.");
-                    }
-                    throw new Error("Seu login foi criado, mas houve um erro ao salvar seu perfil. Por favor, contate o suporte.");
+                    console.error("CRITICAL: Profile creation failed after sign up:", profileError);
+                    // This is a critical state. The user exists in auth but not in profiles.
+                    // We must inform them to contact support.
+                    throw new Error("Seu login foi criado, mas houve um erro ao salvar seu perfil. Por favor, contate o suporte para corrigir sua conta.");
                 }
 
-                setMessage('Cadastro realizado com sucesso! Você já pode entrar com seu Nº de Crachá e senha.');
-                setIsSignUp(false);
-                setFullName('');
-                setEmployeeId('');
-                setPassword('');
+                setMessage('Cadastro realizado com sucesso! Você será redirecionado para a tela de login.');
+                setTimeout(() => {
+                    setIsSignUp(false);
+                    setFullName('');
+                    setEmployeeId('');
+                    setPassword('');
+                    setMessage(null);
+                }, 3000);
 
             } else {
-                const { error } = await supabase.auth.signInWithPassword({
+                // --- SIGN IN LOGIC ---
+                const { error: signInError } = await supabase.auth.signInWithPassword({
                     email,
                     password,
                 });
-                if (error) throw error;
+                
+                if (signInError) {
+                    if (signInError.message.includes("Invalid login credentials")) {
+                         setError("Nº do Crachá ou senha inválidos.");
+                    } else {
+                        throw signInError;
+                    }
+                }
+                // On successful login, the App.tsx onAuthStateChange listener will take over.
             }
         } catch (err: any) {
-            console.error("Auth Error:", err.message);
-
-            if (err.message.includes("Invalid login credentials")) {
-                setError("Nº do Crachá ou senha inválidos.");
-            } else {
-                setError(err.error_description || err.message);
+            console.error("Auth Error:", err);
+            // Use a fallback error message if a specific one isn't set
+            if (!error) {
+                setError(err.error_description || err.message || "Ocorreu um erro desconhecido.");
             }
         } finally {
             setLoading(false);
         }
+    };
+    
+    const toggleMode = () => {
+        setIsSignUp(!isSignUp);
+        setError(null);
+        setMessage(null);
+        setEmployeeId('');
+        setPassword('');
+        setFullName('');
     };
 
     return (
@@ -121,10 +108,10 @@ const AuthView: React.FC = () => {
             </div>
             <div className="w-full max-w-sm mx-auto bg-gray-800 p-8 rounded-lg shadow-lg">
                 <div className="mb-4 flex border-b border-gray-700">
-                    <button onClick={() => { setIsSignUp(false); setError(null); setMessage(null);}} className={`w-1/2 py-2 font-semibold ${!isSignUp ? 'text-brand-primary border-b-2 border-brand-primary' : 'text-gray-400'}`}>
+                    <button onClick={() => !isSignUp && toggleMode()} className={`w-1/2 py-2 font-semibold ${!isSignUp ? 'text-brand-primary border-b-2 border-brand-primary' : 'text-gray-400'}`}>
                         Entrar
                     </button>
-                    <button onClick={() => { setIsSignUp(true); setError(null); setMessage(null);}} className={`w-1/2 py-2 font-semibold ${isSignUp ? 'text-brand-primary border-b-2 border-brand-primary' : 'text-gray-400'}`}>
+                    <button onClick={() => isSignUp && toggleMode()} className={`w-1/2 py-2 font-semibold ${isSignUp ? 'text-brand-primary border-b-2 border-brand-primary' : 'text-gray-400'}`}>
                         Cadastrar
                     </button>
                 </div>
