@@ -36,10 +36,14 @@ export function useAuth() {
     // Fix: Cast to `any` to bypass incorrect V1 type definitions that cause a compilation error.
     const { data: authListener } = (supabase.auth as any).onAuthStateChange(
       async (_event: string, session: Session | null) => {
-        setSession(session);
-        await fetchProfile(session?.user ?? null);
-        // Once the session is processed and profile is fetched, the initial auth check is complete.
-        setLoading(false);
+        try {
+          setSession(session);
+          await fetchProfile(session?.user ?? null);
+        } finally {
+          // This `finally` block ensures loading is set to false regardless of
+          // whether profile fetching succeeds or fails, fixing the infinite loop.
+          setLoading(false);
+        }
       }
     );
 
