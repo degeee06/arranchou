@@ -7,7 +7,8 @@ import Header from './components/Header';
 import CurrentWeekView from './components/CurrentWeekView';
 import HistoryView from './components/HistoryView';
 import EmployeeWeekView from './components/EmployeeWeekView';
-import { CalendarIcon, HistoryIcon } from './components/icons';
+import ManageUsersView from './components/ManageUsersView';
+import { CalendarIcon, HistoryIcon, UsersIcon } from './components/icons';
 
 // Function to get ISO week number (e.g., 2024-W42)
 export const getWeekId = (date: Date): string => {
@@ -30,7 +31,7 @@ function App() {
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentWeekId] = useState<string>(getWeekId(new Date()));
-  const [view, setView] = useState<'current' | 'history'>('current');
+  const [view, setView] = useState<'current' | 'history' | 'manage_users'>('current');
 
   const fetchData = useCallback(async (currentSession: Session) => {
     try {
@@ -249,6 +250,12 @@ function App() {
               >
                  <span className="flex items-center gap-2"><HistoryIcon /> <span className="hidden sm:inline">Histórico</span></span>
               </button>
+              <button
+                onClick={() => setView('manage_users')}
+                className={`px-2 sm:px-4 py-2 font-semibold transition-colors ${view === 'manage_users' ? 'text-brand-primary border-b-2 border-brand-primary' : 'text-gray-400'}`}
+              >
+                 <span className="flex items-center gap-2"><UsersIcon /> <span className="hidden sm:inline">Gerenciar Usuários</span></span>
+              </button>
             </nav>
             {view === 'current' && (
               <CurrentWeekView
@@ -262,6 +269,13 @@ function App() {
               />
             )}
             {view === 'history' && <HistoryView allProfiles={profiles} allAttendances={attendanceRecords} />}
+            {view === 'manage_users' && (
+              <ManageUsersView
+                profiles={profiles}
+                setProfiles={setProfiles}
+                currentUserProfile={profile}
+              />
+            )}
           </>
         ) : (
           <EmployeeWeekView 
