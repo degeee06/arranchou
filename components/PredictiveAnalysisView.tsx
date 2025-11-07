@@ -67,10 +67,7 @@ const PredictiveAnalysisView: React.FC = () => {
             const nextWeekId = getNextWeekId(lastWeekId);
                 
             // FIX: Call Gemini AI instead of DeepSeek.
-            if (!process.env.API_KEY) {
-                throw new Error("A chave de API GEMINI_API_KEY não foi configurada. Verifique o arquivo .env e a configuração do Vite.");
-            }
-            
+            // Per coding guidelines, assume API_KEY is present. Removed explicit check.
             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
             
             const systemInstruction = `Você é um analista de dados especialista em otimização de recursos para refeitórios. Sua tarefa é analisar dados históricos de presença e prever a demanda futura. Você deve retornar sua análise estritamente no formato JSON, sem nenhum texto, formatação ou markdown adicional.`;
