@@ -21,30 +21,6 @@ const AuthView: React.FC = () => {
 
         try {
             if (isSignUp) {
-                // 1. Check if employee ID is allowed to register
-                const { data: isAllowed, error: rpcError } = await supabase.rpc('is_employee_allowed', { p_employee_id: employeeId });
-
-                if (rpcError) {
-                    throw new Error("Não foi possível verificar a permissão de cadastro. Tente novamente.");
-                }
-                if (!isAllowed) {
-                    setError("Seu Nº de Crachá não tem permissão para se cadastrar. Por favor, fale com um administrador.");
-                    setLoading(false);
-                    return;
-                }
-
-                // 2. Check if employee ID is already registered in profiles
-                const { error: existingUserError } = await supabase.from('profiles').select('id').eq('employee_id', employeeId).single();
-                
-                if (existingUserError === null) {
-                    setError("Este Nº do Crachá já está cadastrado. Tente fazer login.");
-                    setLoading(false);
-                    return;
-                }
-                if (existingUserError && existingUserError.code !== 'PGRST116') { // 'PGRST116' means no rows found, which is good
-                    throw existingUserError;
-                }
-                
                 const { error } = await supabase.auth.signUp({
                     email,
                     password,
@@ -69,9 +45,7 @@ const AuthView: React.FC = () => {
         } catch (err: any) {
             console.error("Auth Error:", err.message);
 
-            if (err.message.includes("Database error granting user")) {
-                setError("Erro de Permissão no Banco de Dados. O login foi validado, mas o sistema não conseguiu ler seu perfil. Verifique no painel do Supabase: 1) Se existe um perfil para este usuário na tabela 'profiles'. 2) Se o 'id' neste perfil é EXATAMENTE o mesmo do 'UID' do usuário na seção 'Authentication'. 3) Se as Políticas de Segurança (RLS) da tabela 'profiles' estão ativas e corretas.");
-            } else if (err.message.includes("Invalid login credentials")) {
+            if (err.message.includes("Invalid login credentials")) {
                 setError("Nº do Crachá ou senha inválidos.");
             } else if (err.message.includes('profiles_employee_id_key')) {
                 // This is the new, more robust check for the UNIQUE constraint on the database.

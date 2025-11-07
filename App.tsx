@@ -8,8 +8,7 @@ import CurrentWeekView from './components/CurrentWeekView';
 import HistoryView from './components/HistoryView';
 import EmployeeWeekView from './components/EmployeeWeekView';
 import ManageUsersView from './components/ManageUsersView';
-import AccessControlView from './components/AccessControlView';
-import { CalendarIcon, HistoryIcon, UsersIcon, ShieldCheckIcon } from './components/icons';
+import { CalendarIcon, HistoryIcon, UsersIcon } from './components/icons';
 
 // Function to get ISO week number (e.g., 2024-W42)
 export const getWeekId = (date: Date): string => {
@@ -32,7 +31,7 @@ function App() {
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentWeekId] = useState<string>(getWeekId(new Date()));
-  const [view, setView] = useState<'current' | 'history' | 'manage_users' | 'access_control'>('current');
+  const [view, setView] = useState<'current' | 'history' | 'manage_users'>('current');
 
   const fetchData = useCallback(async (currentSession: Session) => {
     try {
@@ -257,14 +256,6 @@ function App() {
               >
                  <span className="flex items-center gap-2"><UsersIcon /> <span className="hidden sm:inline">Gerenciar Usuários</span></span>
               </button>
-              {profile.role === 'super_admin' && (
-                <button
-                    onClick={() => setView('access_control')}
-                    className={`px-2 sm:px-4 py-2 font-semibold transition-colors ${view === 'access_control' ? 'text-brand-primary border-b-2 border-brand-primary' : 'text-gray-400'}`}
-                >
-                    <span className="flex items-center gap-2"><ShieldCheckIcon /> <span className="hidden sm:inline">Controle de Acesso</span></span>
-                </button>
-              )}
             </nav>
             {view === 'current' && (
               <CurrentWeekView
@@ -285,7 +276,6 @@ function App() {
                 currentUserProfile={profile}
               />
             )}
-            {view === 'access_control' && <AccessControlView />}
           </>
         ) : (
           <EmployeeWeekView 
