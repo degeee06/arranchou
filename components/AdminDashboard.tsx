@@ -25,242 +25,233 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ profile }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState('today'); // 'today', 'history', 'users'
 
+  // State for the new user modal
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [newUser, setNewUser] = useState({ fullName: '', badgeNumber: '', password: '' });
+  const [isCreatingUser, setIsCreatingUser] = useState(false);
+  const [creationError, setCreationError] = useState<string | null>(null);
+
   const getTodayString = () => new Date().toISOString().split('T')[0];
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    
-    const { data: usersData, error: usersError } = await supabase.from('profiles').select('*').order('full_name');
-    if (usersError) console.error("Error fetching users:", usersError);
-    else setUsers(usersData || []);
+  const fetchData = useCallback(async (isInitial = false) => {
+    if (isInitial) setLoading(true);
 
-    const { data: attendanceData, error: attendanceError } = await supabase.from('attendance').select('*, profiles(full_name)').order('date', { ascending: false });
-    if (attendanceError) console.error("Error fetching attendance:", attendanceError);
-    else setAttendance(attendanceData as AdminAttendanceRecord[] || []);
+    const usersPromise = supabase.from('profiles').select('*').order('full_name');
+    const attendancePromise = supabase.from('attendance').select('*, profiles(full_name)').order('date', { ascending: false });
 
-    setLoading(false);
+    const [{ data: usersData, error: usersError }, { data: attendanceData, error: attendanceError }] = await Promise.all([usersPromise, attendancePromise]);
+
+    if (usersError) {
+      console.error("Error fetching users:", usersError);
+    } else {
+      setUsers(usersData || []);
+    }
+
+    if (attendanceError) {
+      console.error("Error fetching attendance:", attendanceError.message);
+    } else {
+      setAttendance(attendanceData as AdminAttendanceRecord[] || []);
+    }
+
+    if (usersData && attendanceData) {
+      const today = getTodayString();
+      const usersWithoutTodayAttendance = usersData.filter(user => 
+        !attendanceData.some(att => att.user_id === user.id && att.date === today)
+      );
+
+      if (usersWithoutTodayAttendance.length > 0) {
+        const newAttendanceRecords = usersWithoutTodayAttendance.map(user => ({
+          user_id: user.id,
+          date: today,
+          status: AttendanceStatus.Pendente
+        }));
+        await supabase.from('attendance').insert(newAttendanceRecords);
+        // After creating missing records, refetch to get the latest state.
+        // We call without isInitial to avoid the loading spinner.
+        if (isInitial) await fetchData(false);
+      }
+    }
+
+    if (isInitial) setLoading(false);
   }, []);
 
   useEffect(() => {
-    fetchData();
+    fetchData(true);
   }, [fetchData]);
+
+  const handleUpdateStatus = async (attendanceId: number, status: AttendanceStatus) => {
+    const { data, error } = await supabase.from('attendance').update({ status }).eq('id', attendanceId).select('*, profiles(full_name)').single();
+    if (error) {
+      console.error("Error updating status:", error);
+    } else {
+      setAttendance(prev => prev.map(att => att.id === attendanceId ? data as AdminAttendanceRecord : att));
+    }
+  };
   
-  const handleStatusChange = async (userId: string, date: string, newStatus: AttendanceStatus) => {
-    const existingRecord = attendance.find(a => a.user_id === userId && a.date === date);
-    
-    let result;
-    if (existingRecord) {
-        result = await supabase.from('attendance').update({ status: newStatus }).eq('id', existingRecord.id).select('*, profiles(full_name)').single();
-    } else {
-        result = await supabase.from('attendance').insert({ user_id: userId, date, status: newStatus }).select('*, profiles(full_name)').single();
-    }
-    
-    const { data, error } = result;
+  const handleUpdateRole = async (userId: string, role: 'admin' | 'employee') => {
+      const { data, error } = await supabase.from('profiles').update({ role }).eq('id', userId).select().single();
+      if (error) {
+          console.error("Error updating role:", error);
+      } else {
+          setUsers(prev => prev.map(u => u.id === userId ? data : u));
+      }
+  };
 
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsCreatingUser(true);
+    setCreationError(null);
+
+    const { data, error } = await supabase.functions.invoke('create-user', {
+        body: newUser,
+    });
+    
+    setIsCreatingUser(false);
+
+    // This handles network errors or if the function itself crashes
     if (error) {
-        console.error('Error updating status:', error);
-        alert('Falha ao atualizar o status.');
-    } else if (data) {
-        const newRecord = data as AdminAttendanceRecord;
-        setAttendance(prev => {
-            const index = prev.findIndex(a => a.id === newRecord.id);
-            if (index > -1) {
-                const newAttendance = [...prev];
-                newAttendance[index] = newRecord;
-                return newAttendance;
-            } else {
-                return [newRecord, ...prev].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-            }
-        });
+        setCreationError('Falha na comunicação com o servidor. Tente novamente.');
+        return;
     }
-  };
-
-  const handleRoleChange = async (userId: string, newRole: 'admin' | 'employee') => {
-    if (userId === profile.id && newRole === 'employee') {
-      alert("Você não pode remover seu próprio acesso de administrador.");
-      return;
-    }
-
-    const { error } = await supabase
-      .from('profiles')
-      .update({ role: newRole })
-      .eq('id', userId);
     
-    if (error) {
-      console.error('Error updating role:', error);
-      alert('Erro ao atualizar o cargo do usuário.');
-    } else {
-      setUsers(prevUsers => prevUsers.map(u => u.id === userId ? { ...u, role: newRole } : u));
-      alert('Cargo do usuário atualizado com sucesso!');
+    // This handles custom errors returned from the function logic (e.g., user exists)
+    if (data.error) {
+        setCreationError(data.error);
+        return;
     }
+
+    // Success
+    setIsModalOpen(false);
+    setNewUser({ fullName: '', badgeNumber: '', password: '' });
+    await fetchData(false); // Refresh data
   };
 
-  const today = getTodayString();
-  const todayAttendanceMap = new Map<string, AdminAttendanceRecord>();
-  attendance.filter(a => a.date === today).forEach(a => {
-      todayAttendanceMap.set(a.user_id, a);
-  });
-
-  const filteredUsers = users.filter(user => 
-    user.full_name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  const filteredHistory = attendance.filter(record => 
-    record.profiles?.full_name?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  const TabButton = ({ tabName, label }: { tabName: string; label: string }) => {
-    const isActive = activeTab === tabName;
-    return (
-        <button
-            onClick={() => setActiveTab(tabName)}
-            className={`${
-                isActive
-                ? 'border-blue-500 text-blue-600 dark:border-blue-400 dark:text-blue-300'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-200 dark:hover:border-gray-600'
-            } whitespace-nowrap py-4 px-3 border-b-2 font-medium text-sm transition-colors focus:outline-none`}
-        >
-            {label}
-        </button>
-    )
-  };
+  const filteredAttendance = attendance.filter(att => att.profiles?.full_name.toLowerCase().includes(searchTerm.toLowerCase()));
+  const filteredUsers = users.filter(user => user.full_name.toLowerCase().includes(searchTerm.toLowerCase()));
+  const todayRecords = filteredAttendance.filter(att => att.date === getTodayString());
 
   const renderContent = () => {
-    if (loading) {
-      return (
-        <div className="flex items-center justify-center h-48">
-            <div className="w-8 h-8 border-4 border-dashed rounded-full animate-spin border-blue-600"></div>
-        </div>
-      );
-    }
-    switch (activeTab) {
+    if (loading) return <div className="text-center p-8">Carregando dados...</div>;
+
+    switch(activeTab) {
       case 'today':
         return (
-          <div className="overflow-x-auto mt-6">
+          <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
               <thead className="bg-gray-50 dark:bg-gray-700">
                 <tr>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Funcionário</th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status de Hoje</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Funcionário</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status Hoje</th>
                 </tr>
               </thead>
               <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                {filteredUsers.map(user => {
-                  const userAttendance = todayAttendanceMap.get(user.id);
-                  const currentStatus = userAttendance?.status || AttendanceStatus.Pendente;
-                  return (
-                    <tr key={user.id}>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{user.full_name}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm">
-                        <select
-                          value={currentStatus}
-                          onChange={(e) => handleStatusChange(user.id, today, e.target.value as AttendanceStatus)}
-                          className="block w-full max-w-xs pl-3 pr-10 py-2 text-base border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md bg-gray-50 dark:bg-gray-700 dark:text-white"
-                        >
-                          {statusOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                        </select>
-                      </td>
-                    </tr>
-                  )
-                })}
+                {todayRecords.map(att => (
+                  <tr key={att.id}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{att.profiles?.full_name}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      <select value={att.status} onChange={(e) => handleUpdateStatus(att.id, e.target.value as AttendanceStatus)} className="p-2 rounded-md bg-gray-100 dark:bg-gray-600 border-gray-300 dark:border-gray-500 focus:ring-blue-500 focus:border-blue-500">
+                        {statusOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                      </select>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
         );
       case 'history':
-        const printableHistory = filteredHistory.filter(h => h.profiles) as (Attendance & { profiles: { full_name: string } })[];
         return (
-          <div className="mt-6">
-            <div className="flex justify-end mb-4">
-              <button
-                onClick={() => generateAdminHistoryPDF(printableHistory)}
-                className="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5 mr-2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
-                Baixar Relatório PDF
-              </button>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                <thead className="bg-gray-50 dark:bg-gray-700">
-                    <tr>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Data</th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Funcionário</th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
-                    </tr>
-                </thead>
-                <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                  {filteredHistory.map(record => (
-                     <tr key={record.id}>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{new Date(record.date + 'T00:00:00').toLocaleDateString('pt-BR')}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{record.profiles?.full_name || 'N/A'}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{record.status}</td>
-                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+              <thead className="bg-gray-50 dark:bg-gray-700">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Data</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Funcionário</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                {filteredAttendance.map(att => (
+                  <tr key={att.id}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{new Date(att.date + 'T00:00:00').toLocaleDateString('pt-BR')}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">{att.profiles?.full_name}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">{att.status}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         );
       case 'users':
         return (
-            <div className="overflow-x-auto mt-6">
-              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                  <thead className="bg-gray-50 dark:bg-gray-700">
-                      <tr>
-                          <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Funcionário</th>
-                          <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Crachá</th>
-                          <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Cargo</th>
-                      </tr>
-                  </thead>
-                  <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                      {filteredUsers.map(user => (
-                          <tr key={user.id}>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{user.full_name}</td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{user.badge_number}</td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                  <select
-                                      value={user.role}
-                                      onChange={(e) => handleRoleChange(user.id, e.target.value as 'admin' | 'employee')}
-                                      className="block w-full max-w-xs pl-3 pr-10 py-2 text-base border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md bg-gray-50 dark:bg-gray-700 dark:text-white"
-                                      disabled={user.id === profile.id}
-                                  >
-                                      {roleOptions.map(opt => <option key={opt} value={opt}>{opt === 'admin' ? 'Administrador' : 'Funcionário'}</option>)}
-                                  </select>
-                              </td>
-                          </tr>
-                      ))}
-                  </tbody>
-              </table>
-          </div>
+            <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                <thead className="bg-gray-50 dark:bg-gray-700">
+                    <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Nome</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Crachá</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Cargo</th>
+                    </tr>
+                </thead>
+                <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                    {filteredUsers.map(user => (
+                    <tr key={user.id}>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{user.full_name}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">{user.badge_number}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <select value={user.role} onChange={(e) => handleUpdateRole(user.id, e.target.value as 'admin' | 'employee')} className="p-2 rounded-md bg-gray-100 dark:bg-gray-600 border-gray-300 dark:border-gray-500 focus:ring-blue-500 focus:border-blue-500">
+                            {roleOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                        </select>
+                        </td>
+                    </tr>
+                    ))}
+                </tbody>
+                </table>
+            </div>
         );
-      default:
-        return null;
+      default: return null;
     }
   };
 
-
   return (
-    <div className="bg-white dark:bg-gray-800 shadow-lg rounded-xl p-6">
-      <div className="border-b border-gray-200 dark:border-gray-700">
-          <nav className="-mb-px flex space-x-8" aria-label="Tabs">
-              <TabButton tabName='today' label='Presença de Hoje' />
-              <TabButton tabName='history' label='Histórico Geral' />
-              <TabButton tabName='users' label='Gerenciar Usuários' />
-          </nav>
-      </div>
-      
-      <div className="mt-6">
-          <input 
-              type="text" 
-              placeholder="Buscar por nome do funcionário..." 
-              value={searchTerm} 
-              onChange={e => setSearchTerm(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm bg-gray-50 dark:bg-gray-700 focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:text-white"
-          />
+    <div className="space-y-6">
+      <div className="bg-white dark:bg-gray-800 shadow-lg rounded-xl p-6">
+        <div className="flex flex-col md:flex-row justify-between items-center space-y-4 md:space-y-0 mb-4">
+          <div className="flex space-x-1 border border-gray-200 dark:border-gray-700 rounded-lg p-1">
+            <button onClick={() => setActiveTab('today')} className={`px-4 py-2 text-sm font-medium rounded-md ${activeTab === 'today' ? 'bg-blue-600 text-white' : 'hover:bg-gray-100 dark:hover:bg-gray-700'}`}>Hoje</button>
+            <button onClick={() => setActiveTab('history')} className={`px-4 py-2 text-sm font-medium rounded-md ${activeTab === 'history' ? 'bg-blue-600 text-white' : 'hover:bg-gray-100 dark:hover:bg-gray-700'}`}>Histórico Geral</button>
+            <button onClick={() => setActiveTab('users')} className={`px-4 py-2 text-sm font-medium rounded-md ${activeTab === 'users' ? 'bg-blue-600 text-white' : 'hover:bg-gray-100 dark:hover:bg-gray-700'}`}>Usuários</button>
+          </div>
+          <div className="flex items-center space-x-3 w-full md:w-auto">
+            <input type="text" placeholder="Pesquisar..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full md:w-64 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700 focus:ring-blue-500 focus:border-blue-500"/>
+            {activeTab === 'history' && <button onClick={() => generateAdminHistoryPDF(filteredAttendance)} className="p-2 border rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">PDF</button>}
+            {activeTab === 'users' && <button onClick={() => setIsModalOpen(true)} className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700">Adicionar Funcionário</button>}
+          </div>
+        </div>
+        {renderContent()}
       </div>
 
-      {renderContent()}
+      {isModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-8 w-full max-w-md">
+            <h3 className="text-lg font-bold mb-4">Novo Funcionário</h3>
+            <form onSubmit={handleCreateUser}>
+              <div className="space-y-4">
+                <input type="text" placeholder="Nome Completo" required value={newUser.fullName} onChange={(e) => setNewUser({...newUser, fullName: e.target.value})} className="w-full px-4 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" />
+                <input type="text" placeholder="Número do Crachá" required value={newUser.badgeNumber} onChange={(e) => setNewUser({...newUser, badgeNumber: e.target.value})} className="w-full px-4 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" />
+                <input type="password" placeholder="Senha Inicial" required value={newUser.password} onChange={(e) => setNewUser({...newUser, password: e.target.value})} className="w-full px-4 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" />
+              </div>
+              {creationError && <p className="text-red-500 text-sm mt-4">{creationError}</p>}
+              <div className="flex justify-end space-x-3 mt-6">
+                <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2 rounded-lg border dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700">Cancelar</button>
+                <button type="submit" disabled={isCreatingUser} className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:bg-blue-400">
+                  {isCreatingUser ? 'Criando...' : 'Criar'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
