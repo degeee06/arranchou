@@ -6,63 +6,66 @@ import { Profile } from '../types';
 export function useAuth() {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [loading, setLoading] = useState(true); // Começa como true
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // onAuthStateChange é a única fonte de verdade.
-    // Ele é acionado uma vez no carregamento da página com a sessão inicial e, em seguida, para quaisquer alterações de autenticação.
-    const { data: authListener } = (supabase.auth as any).onAuthStateChange(
-      async (event: string, session: Session | null) => {
-        try {
-          setUser(session?.user ?? null);
+    async function loadInitialSession() {
+      try {
+        // 🔹 1. Verifica se há sessão salva no navegador
+        const { data } = await supabase.auth.getSession();
+        const session = data?.session;
 
-          if (session?.user) {
-            // Se houver um usuário, busca o perfil dele.
-            const { data, error } = await supabase
-              .from('profiles')
-              .select('*')
-              .eq('id', session.user.id)
-              .single();
+        setUser(session?.user ?? null);
 
-            if (error) {
-              // Se a busca do perfil falhar, é um erro crítico.
-              // Isso pode acontecer se o perfil não foi criado corretamente
-              // ou se o token é válido, mas o usuário não existe no banco de dados.
-              // Devemos tratar isso como um estado de "não logado".
-              console.error('Erro ao buscar perfil:', error);
-              setProfile(null);
-            } else {
-              setProfile(data);
-            }
-          } else {
-            // Se não há sessão, não há perfil.
-            setProfile(null);
-          }
-        } catch (e) {
-          console.error("Um erro crítico ocorreu no onAuthStateChange:", e);
-          setUser(null);
+        if (session?.user) {
+          // 🔹 2. Busca o perfil do usuário logado
+          const { data: profileData, error } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
+
+          if (!error) setProfile(profileData);
+        }
+      } catch (e) {
+        console.error('Erro ao carregar sessão inicial:', e);
+        setUser(null);
+        setProfile(null);
+      } finally {
+        // 🔹 3. Agora pode renderizar a tela
+        setLoading(false);
+      }
+    }
+
+    loadInitialSession();
+
+    // 🔹 4. Listener que atualiza o estado se o usuário logar/deslogar
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      async (_event: string, session: Session | null) => {
+        setUser(session?.user ?? null);
+
+        if (session?.user) {
+          const { data, error } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
+
+          if (!error) setProfile(data);
+        } else {
           setProfile(null);
-        } finally {
-          // Não importa o que aconteça (sucesso, sem sessão, erro),
-          // a verificação inicial de autenticação está agora completa. Finaliza o estado de carregamento.
-          setLoading(false);
         }
       }
     );
 
-    // Função de limpeza para cancelar a inscrição quando o componente for desmontado.
     return () => {
       authListener?.subscription.unsubscribe();
     };
-  }, []); // O array de dependências vazio significa que isso roda apenas uma vez na montagem.
+  }, []);
 
   const logout = async () => {
-    const { error } = await (supabase.auth as any).signOut();
-    if (error) {
-      console.error('Erro ao fazer logout:', error.message);
-    }
-    // O listener onAuthStateChange irá lidar automaticamente com a atualização do estado
-    // ao receber uma sessão nula. Não há necessidade de definir estados manualmente aqui.
+    const { error } = await supabase.auth.signOut();
+    if (error) console.error('Erro ao sair:', error.message);
   };
 
   return { user, profile, loading, logout };

@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { useAuth } from './hooks/useAuth';
 import Login from './components/Login';
@@ -7,7 +6,7 @@ import Dashboard from './components/Dashboard';
 const App: React.FC = () => {
   const { profile, loading, logout } = useAuth();
 
-  // Exibe o spinner SOMENTE durante a verificação inicial de autenticação.
+  // 🔹 Mostra tela de carregamento enquanto verifica sessão
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen bg-gray-100 dark:bg-gray-900">
@@ -16,12 +15,12 @@ const App: React.FC = () => {
     );
   }
 
-  // Após o carregamento, se houver um perfil, o usuário está logado.
+  // 🔹 Após o carregamento, se há perfil, o usuário está logado
   if (profile) {
     return <Dashboard profile={profile} logout={logout} />;
   }
-  
-  // Se não houver perfil, exibe a tela de login.
+
+  // 🔹 Caso contrário, mostra a tela de login
   return <Login />;
 };
 
