@@ -1,5 +1,15 @@
-
 import { User } from '@supabase/supabase-js';
+
+// Fix: Add a global type definition for import.meta.env to fix TypeScript errors
+// related to Vite environment variables, as the vite/client types could not be found.
+declare global {
+  interface ImportMeta {
+    readonly env: {
+      readonly VITE_SUPABASE_URL: string;
+      readonly VITE_SUPABASE_ANON_KEY: string;
+    }
+  }
+}
 
 export enum AttendanceStatus {
   Pendente = 'Pendente',
