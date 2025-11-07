@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../services/supabase';
 import { UserProfile, AttendanceRecord, AttendanceStatus, WeekData, UserRole } from '../types';
@@ -45,7 +44,7 @@ const CurrentWeekTab: React.FC<{ users: UserProfile[] }> = ({ users }) => {
         const subscription = supabase
             .channel('public:attendance')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, payload => {
-                console.log('Change received!', payload);
+                // Refetch data when a change is detected from another client
                 fetchAttendance();
             })
             .subscribe();
@@ -57,16 +56,34 @@ const CurrentWeekTab: React.FC<{ users: UserProfile[] }> = ({ users }) => {
     
     const handleStatusChange = async (userId: string, date: Date, status: AttendanceStatus) => {
         const dateString = formatDate(date);
-        const { error } = await supabase
+        
+        // Upsert the record and select the result to get the full record back
+        const { data, error } = await supabase
             .from('attendance')
             .upsert({
                 user_id: userId,
                 date: dateString,
                 status: status,
                 week_start_date: formatDate(getWeekStartDate(date))
-            }, { onConflict: 'user_id, date' });
+            }, { onConflict: 'user_id, date' })
+            .select('*, profiles(*)') // Return the full record with profile
+            .single();
 
-        if (error) console.error(error);
+        if (error) {
+            console.error('Error updating attendance:', error);
+            alert('Falha ao atualizar a presença.');
+        } else if (data) {
+            // Update the local state immediately with the new record
+            // This makes the UI responsive for the admin making the change.
+            const newRecord = data as AttendanceRecord;
+            const key = `${newRecord.user_id}-${newRecord.date}`;
+            
+            setAttendance(prevAttendance => {
+                const newAttendanceMap = new Map(prevAttendance);
+                newAttendanceMap.set(key, newRecord);
+                return newAttendanceMap;
+            });
+        }
     };
 
     const openSubstituteModal = (userId: string, date: string) => {
