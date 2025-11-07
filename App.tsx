@@ -9,20 +9,8 @@ import HistoryView from './components/HistoryView';
 import EmployeeWeekView from './components/EmployeeWeekView';
 import ManageUsersView from './components/ManageUsersView';
 import { CalendarIcon, HistoryIcon, UsersIcon } from './components/icons';
+import { getWeekId } from './utils';
 
-// Function to get ISO week number (e.g., 2024-W42)
-export const getWeekId = (date: Date): string => {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  // Set to nearest Thursday: current date + 4 - current day number
-  // Make Sunday's day number 7
-  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
-  // Get first day of year
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  // Calculate full weeks to nearest Thursday
-  const weekNo = Math.ceil((((d.valueOf() - yearStart.valueOf()) / 86400000) + 1) / 7);
-  // Return string
-  return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
-};
 
 function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -72,7 +60,7 @@ function App() {
 
       // Fetch all attendance records. Realtime will keep it in sync.
       const { data: allAttendances, error: attendancesError } = await supabase
-        .from('attendances')
+        .from('attendance')
         .select('*');
       if (attendancesError) throw attendancesError;
       setAttendanceRecords(allAttendances);
@@ -150,27 +138,25 @@ function App() {
     if (!session) return;
 
     const channel = supabase
-      .channel('attendances-changes')
+      .channel('attendance-changes')
       .on<AttendanceRecord>(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'attendances' },
+        { event: '*', schema: 'public', table: 'attendance' },
         (payload) => {
-          // This real-time subscription ensures data consistency across sessions
-          // and synchronizes the state with the database, complementing optimistic updates.
           if (payload.eventType === 'INSERT') {
-            // Add new record, removing any potential duplicates from optimistic updates.
             setAttendanceRecords(prev => 
-              [...prev.filter(r => !(r.user_id === payload.new.user_id && r.week_id === payload.new.week_id && r.day === payload.new.day)), payload.new]
+              [...prev.filter(r => !(r.user_id === payload.new.user_id && r.date === payload.new.date)), payload.new]
             );
           } else if (payload.eventType === 'UPDATE') {
+            const newRecord = payload.new;
             setAttendanceRecords(prev =>
-              prev.map(r => (r.user_id === payload.new.user_id && r.week_id === payload.new.week_id && r.day === payload.new.day) ? payload.new : r)
+              prev.map(r => (r.id === newRecord.id) ? newRecord : r)
             );
           } else if (payload.eventType === 'DELETE') {
-            const deletedRecord = payload.old as { user_id: string; week_id: string; day: DayKey };
-            if (deletedRecord.user_id && deletedRecord.week_id && deletedRecord.day) {
+            const deletedRecord = payload.old as { id: number };
+            if (deletedRecord.id) {
                 setAttendanceRecords(prev =>
-                  prev.filter(r => !(r.user_id === deletedRecord.user_id && r.week_id === deletedRecord.week_id && r.day === deletedRecord.day))
+                  prev.filter(r => r.id !== deletedRecord.id)
                 );
             }
           }
@@ -212,7 +198,7 @@ function App() {
       if (!acc[record.user_id]) {
         acc[record.user_id] = {};
       }
-      acc[record.user_id][record.day] = record.is_present;
+      acc[record.user_id][record.date] = record.status;
       return acc;
     }, {});
   }, [attendanceRecords]);

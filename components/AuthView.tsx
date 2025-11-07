@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { supabase } from '../supabase';
 
 const AuthView: React.FC = () => {
-    const [employeeId, setEmployeeId] = useState('');
+    const [badgeNumber, setBadgeNumber] = useState('');
     const [password, setPassword] = useState('');
     const [fullName, setFullName] = useState('');
     const [loading, setLoading] = useState(false);
@@ -16,8 +16,8 @@ const AuthView: React.FC = () => {
         setError(null);
         setMessage(null);
 
-        // Generate a consistent, fake email from the employee ID for Supabase Auth
-        const email = `employee_${employeeId}@arranchou.app`;
+        // Generate a consistent, fake email from the badge number for Supabase Auth
+        const email = `employee_${badgeNumber}@arranchou.app`;
 
         try {
             if (isSignUp) {
@@ -27,7 +27,7 @@ const AuthView: React.FC = () => {
                     options: {
                         data: {
                             full_name: fullName,
-                            employee_id: employeeId,
+                            badge_number: badgeNumber,
                             role: 'employee',
                         }
                     }
@@ -47,7 +47,7 @@ const AuthView: React.FC = () => {
 
             if (err.message.includes("Invalid login credentials")) {
                 setError("Nº do Crachá ou senha inválidos.");
-            } else if (err.message.includes('profiles_employee_id_key')) {
+            } else if (err.message.includes('profiles_badge_number_key')) {
                 // This is the new, more robust check for the UNIQUE constraint on the database.
                 setError("Este Nº do Crachá já está cadastrado. Tente um número diferente ou faça login.");
             } else if (err.message.includes("User already registered")) {
@@ -74,7 +74,7 @@ const AuthView: React.FC = () => {
                             const { error: profileError } = await supabase.from('profiles').insert({
                                 id: signInData.user.id,
                                 full_name: fullName,
-                                employee_id: employeeId,
+                                badge_number: badgeNumber,
                                 role: 'employee'
                             });
 
@@ -139,16 +139,16 @@ const AuthView: React.FC = () => {
                         </div>
                     )}
                     <div className="mb-4">
-                        <label className="block text-gray-300 text-sm font-bold mb-2" htmlFor="employeeId">
-                            Nº do Crachá / Matrícula
+                        <label className="block text-gray-300 text-sm font-bold mb-2" htmlFor="badgeNumber">
+                            Nº do Crachá
                         </label>
                         <input
-                            id="employeeId"
+                            id="badgeNumber"
                             className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-primary focus:border-brand-primary text-white"
                             type="text"
-                            placeholder="Seu número de identificação"
-                            value={employeeId}
-                            onChange={(e) => setEmployeeId(e.target.value)}
+                            placeholder="Seu número de crachá"
+                            value={badgeNumber}
+                            onChange={(e) => setBadgeNumber(e.target.value)}
                             required
                         />
                     </div>

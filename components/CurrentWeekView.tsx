@@ -7,6 +7,7 @@ import Summary from './Summary';
 import { SearchIcon, CheckIcon, XIcon } from './icons';
 import Modal from './Modal';
 import { supabase } from '../supabase';
+import { getDatesForWeekId } from '../utils';
 
 interface CurrentWeekViewProps {
   profiles: Profile[];
@@ -21,19 +22,21 @@ interface CurrentWeekViewProps {
 const AdminPersonalAttendance: React.FC<{
   profile: Profile;
   attendance: Attendance;
+  currentWeekId: string;
   onToggle: (day: DayKey) => void;
-}> = ({ profile, attendance, onToggle }) => {
+}> = ({ profile, attendance, currentWeekId, onToggle }) => {
     const jsTodayIndex = new Date().getDay();
     const todayIndex = jsTodayIndex === 0 ? 6 : jsTodayIndex - 1;
+    const weekDates = getDatesForWeekId(currentWeekId);
 
     return (
         <section className="bg-gray-800 rounded-lg shadow p-4 sm:p-6 mb-6">
             <h2 className="text-xl font-bold mb-4 text-gray-200">Minha Presença</h2>
             <div className="flex flex-wrap justify-center gap-3">
-                {DAYS_OF_WEEK.map((day) => {
-                    const dayIndex = DAYS_OF_WEEK.indexOf(day);
+                {DAYS_OF_WEEK.map((day, dayIndex) => {
                     const isPast = dayIndex < todayIndex;
-                    const status = attendance[profile.id]?.[day];
+                    const dateForDay = weekDates[dayIndex].toISOString().split('T')[0];
+                    const status = attendance[profile.id]?.[dateForDay];
                     return (
                         <div key={day} className={`text-center p-3 rounded-md w-24 ${isPast ? 'bg-gray-700/50 opacity-60' : 'bg-gray-700'}`}>
                             <p className="font-semibold text-sm text-white">{day}</p>
@@ -41,15 +44,15 @@ const AdminPersonalAttendance: React.FC<{
                                 onClick={() => onToggle(day)}
                                 disabled={isPast}
                                 className={`mt-3 p-2 w-full flex justify-center rounded-full transition-all duration-200 transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-70 ${
-                                    status === true
+                                    status === 'Presente'
                                     ? 'bg-green-900 text-green-300 hover:bg-green-800'
-                                    : status === false
+                                    : status === 'Ausente'
                                     ? 'bg-red-900 text-red-300 hover:bg-red-800'
                                     : 'bg-gray-600 text-gray-400 hover:bg-gray-500'
                                 }`}
                                 aria-label={`Marcar presença para ${day}`}
                             >
-                                {status === true ? <CheckIcon /> : status === false ? <XIcon /> : <span className="h-5 w-5 flex items-center justify-center font-bold">-</span>}
+                                {status === 'Presente' ? <CheckIcon /> : status === 'Ausente' ? <XIcon /> : <span className="h-5 w-5 flex items-center justify-center font-bold">-</span>}
                             </button>
                         </div>
                     );
@@ -78,46 +81,47 @@ const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance,
         return;
     }
     
-    const currentStatus = attendance[personId]?.[day];
+    const dateForDay = getDatesForWeekId(currentWeekId)[dayIndex].toISOString().split('T')[0];
+    const currentStatus = attendance[personId]?.[dateForDay];
     const originalRecords = attendanceRecords; // Save for rollback
 
-    // Cycle: undefined -> true -> false -> undefined (by deleting)
+    // Cycle: undefined -> 'Presente' -> 'Ausente' -> (delete)
     if (currentStatus === undefined) {
         // Optimistic update
-        setAttendanceRecords(prev => [...prev.filter(r => !(r.user_id === personId && r.week_id === currentWeekId && r.day === day)), { user_id: personId, week_id: currentWeekId, day, is_present: true }]);
+        setAttendanceRecords(prev => [...prev.filter(r => !(r.user_id === personId && r.date === dateForDay)), { user_id: personId, date: dateForDay, status: 'Presente' }]);
         
         // DB operation
-        const { data, error } = await supabase.from('attendances').upsert(
-            { user_id: personId, week_id: currentWeekId, day, is_present: true },
-            { onConflict: 'user_id,week_id,day' }
+        const { error } = await supabase.from('attendance').upsert(
+            { user_id: personId, date: dateForDay, status: 'Presente' },
+            { onConflict: 'user_id,date' }
         ).select();
 
-        if (error || !data || data.length === 0) {
+        if (error) {
             alert("Falha ao salvar. A alteração foi desfeita. Verifique sua conexão com a internet. Se o problema persistir, pode ser uma questão de permissão no banco de dados (RLS).");
             console.error("Falha no upsert (presente):", error);
             setAttendanceRecords(originalRecords); // Rollback
         }
-    } else if (currentStatus === true) {
+    } else if (currentStatus === 'Presente') {
         // Optimistic update
-        setAttendanceRecords(prev => prev.map(r => (r.user_id === personId && r.week_id === currentWeekId && r.day === day) ? { ...r, is_present: false } : r));
+        setAttendanceRecords(prev => prev.map(r => (r.user_id === personId && r.date === dateForDay) ? { ...r, status: 'Ausente' } : r));
 
         // DB operation
-        const { data, error } = await supabase.from('attendances').upsert(
-            { user_id: personId, week_id: currentWeekId, day, is_present: false },
-            { onConflict: 'user_id,week_id,day' }
+        const { error } = await supabase.from('attendance').upsert(
+            { user_id: personId, date: dateForDay, status: 'Ausente' },
+            { onConflict: 'user_id,date' }
         ).select();
         
-        if (error || !data || data.length === 0) {
+        if (error) {
             alert("Falha ao salvar. A alteração foi desfeita. Verifique sua conexão com a internet. Se o problema persistir, pode ser uma questão de permissão no banco de dados (RLS).");
             console.error("Falha no upsert (ausente):", error);
             setAttendanceRecords(originalRecords); // Rollback
         }
-    } else {
+    } else { // status is 'Ausente' or 'Pendente'
         // Optimistic update
-        setAttendanceRecords(prev => prev.filter(r => !(r.user_id === personId && r.week_id === currentWeekId && r.day === day)));
+        setAttendanceRecords(prev => prev.filter(r => !(r.user_id === personId && r.date === dateForDay)));
 
         // DB operation
-        const { error } = await supabase.from('attendances').delete().match({ user_id: personId, week_id: currentWeekId, day });
+        const { error } = await supabase.from('attendance').delete().match({ user_id: personId, date: dateForDay });
         
         if (error) {
             alert("Falha ao salvar. A alteração foi desfeita. Verifique sua conexão com a internet. Se o problema persistir, pode ser uma questão de permissão no banco de dados (RLS).");
@@ -141,6 +145,7 @@ const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance,
     if (!substituteModal.person || !substituteId) return;
 
     const originalPerson = substituteModal.person;
+    const dateForDay = getDatesForWeekId(currentWeekId)[DAYS_OF_WEEK.indexOf(currentDay)].toISOString().split('T')[0];
 
     if (originalPerson.id === substituteId) {
         alert("O substituto não pode ser a mesma pessoa.");
@@ -150,23 +155,23 @@ const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance,
     const originalRecords = attendanceRecords;
     // Optimistic Update
     setAttendanceRecords(prev => {
-        const withoutOriginal = prev.filter(r => !(r.user_id === originalPerson.id && r.week_id === currentWeekId && r.day === currentDay));
-        const withoutSub = withoutOriginal.filter(r => !(r.user_id === substituteId && r.week_id === currentWeekId && r.day === currentDay));
+        const withoutOriginal = prev.filter(r => !(r.user_id === originalPerson.id && r.date === dateForDay));
+        const withoutSub = withoutOriginal.filter(r => !(r.user_id === substituteId && r.date === dateForDay));
         return [
             ...withoutSub,
-            { user_id: originalPerson.id, week_id: currentWeekId, day: currentDay, is_present: false },
-            { user_id: substituteId, week_id: currentWeekId, day: currentDay, is_present: true }
+            { user_id: originalPerson.id, date: dateForDay, status: 'Ausente' },
+            { user_id: substituteId, date: dateForDay, status: 'Presente' }
         ];
     });
 
     // DB Operations in parallel
     const [originalResult, substituteResult] = await Promise.all([
-        supabase.from('attendances').upsert({ user_id: originalPerson.id, week_id: currentWeekId, day: currentDay, is_present: false }, { onConflict: 'user_id,week_id,day' }).select(),
-        supabase.from('attendances').upsert({ user_id: substituteId, week_id: currentWeekId, day: currentDay, is_present: true }, { onConflict: 'user_id,week_id,day' }).select()
+        supabase.from('attendance').upsert({ user_id: originalPerson.id, date: dateForDay, status: 'Ausente' }, { onConflict: 'user_id,date' }).select(),
+        supabase.from('attendance').upsert({ user_id: substituteId, date: dateForDay, status: 'Presente' }, { onConflict: 'user_id,date' }).select()
     ]);
 
     // Check for errors
-    if (originalResult.error || !originalResult.data || originalResult.data.length === 0 || substituteResult.error || !substituteResult.data || substituteResult.data.length === 0) {
+    if (originalResult.error || substituteResult.error) {
         alert("Falha ao salvar a substituição. A alteração foi desfeita. Verifique sua conexão e as permissões do banco de dados (RLS).");
         console.error("Erro na substituição:", { original: originalResult, substitute: substituteResult });
         setAttendanceRecords(originalRecords); // Rollback
@@ -177,7 +182,7 @@ const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance,
   
   const filteredPeople = profiles.filter(person => {
     const query = searchQuery.toLowerCase();
-    return person.full_name.toLowerCase().includes(query) || (person.employee_id && person.employee_id.toLowerCase().includes(query));
+    return person.full_name.toLowerCase().includes(query) || (person.badge_number && person.badge_number.toLowerCase().includes(query));
   });
 
   return (
@@ -186,6 +191,7 @@ const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance,
          <AdminPersonalAttendance 
             profile={adminProfile}
             attendance={attendance}
+            currentWeekId={currentWeekId}
             onToggle={(day) => handleToggleAttendance(adminProfile.id, day)}
          />
        )}
@@ -225,6 +231,7 @@ const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance,
               people={filteredPeople}
               attendance={attendance}
               currentDay={currentDay}
+              currentWeekId={currentWeekId}
               isAdmin={isAdmin}
               onToggleAttendance={handleToggleAttendance}
               onSubstitute={handleOpenSubstituteModal}
@@ -232,7 +239,7 @@ const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance,
           </section>
         </div>
         <aside className="flex flex-col gap-6">
-          <Summary people={profiles} attendance={attendance} currentDay={currentDay} />
+          <Summary people={profiles} attendance={attendance} currentDay={currentDay} currentWeekId={currentWeekId} />
         </aside>
       </div>
 

@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { supabase } from '../supabase';
 import { PredictionResult, DayKey } from '../types';
-import { getReadableWeekRange } from '../utils';
+import { getReadableWeekRange, getWeekId } from '../utils';
 import { ChartBarIcon } from './icons';
-// FIX: Import GoogleGenAI and Type for Gemini API integration.
 import { GoogleGenAI, Type } from '@google/genai';
+import { DAYS_OF_WEEK } from '../constants';
 
 const PredictiveAnalysisView: React.FC = () => {
     const [loading, setLoading] = useState(false);
@@ -42,8 +42,8 @@ const PredictiveAnalysisView: React.FC = () => {
         try {
             // 1. Fetch all historical attendance data
             const { data: allAttendances, error: fetchError } = await supabase
-                .from('attendances')
-                .select('week_id, day, is_present');
+                .from('attendance')
+                .select('date, status');
 
             if (fetchError) throw new Error(`Falha ao buscar dados históricos: ${fetchError.message}`);
             if (!allAttendances || allAttendances.length < 10) {
@@ -52,21 +52,25 @@ const PredictiveAnalysisView: React.FC = () => {
 
             // 2. Pre-process data into a more concise format for the AI
             const dailyCounts: Record<string, number> = allAttendances.reduce((acc, record) => {
-                if (record.is_present) {
-                    const key = `${record.week_id},${record.day}`;
-                    acc[key] = (acc[key] || 0) + 1;
+                if (record.status === 'Presente') {
+                    acc[record.date] = (acc[record.date] || 0) + 1;
                 }
                 return acc;
             }, {} as Record<string, number>);
 
             const csvData = "semana,dia,presentes\n" + Object.entries(dailyCounts)
-                .map(([key, count]) => `${key},${count}`)
+                .map(([date, count]) => {
+                    const d = new Date(date + 'T12:00:00Z'); // Use noon to avoid timezone issues
+                    const weekId = getWeekId(d);
+                    const dayName = DAYS_OF_WEEK[d.getUTCDay() === 0 ? 6 : d.getUTCDay() - 1];
+                    return `${weekId},${dayName},${count}`;
+                })
                 .join('\n');
             
-            const lastWeekId = Object.keys(dailyCounts).reduce((latest, key) => key > latest ? key : latest, '').split(',')[0];
+            const lastDate = Object.keys(dailyCounts).reduce((latest, date) => date > latest ? date : latest, '');
+            const lastWeekId = getWeekId(new Date(lastDate));
             const nextWeekId = getNextWeekId(lastWeekId);
                 
-            // FIX: Call Gemini AI instead of DeepSeek.
             if (!process.env.API_KEY) {
                 throw new Error("A chave de API GEMINI_API_KEY não foi configurada. Verifique o arquivo .env e a configuração do Vite.");
             }

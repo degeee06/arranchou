@@ -3,6 +3,7 @@ import { supabase } from '../supabase';
 import { Profile, DayKey, Attendance, AttendanceRecord } from '../types';
 import { DAYS_OF_WEEK } from '../constants';
 import { CheckIcon, XIcon } from './icons';
+import { getDatesForWeekId } from '../utils';
 
 interface EmployeeWeekViewProps {
   profile: Profile;
@@ -15,6 +16,7 @@ interface EmployeeWeekViewProps {
 const EmployeeWeekView: React.FC<EmployeeWeekViewProps> = ({ profile, attendance, attendanceRecords, setAttendanceRecords, currentWeekId }) => {
     const jsTodayIndex = new Date().getDay();
     const todayIndex = jsTodayIndex === 0 ? 6 : jsTodayIndex - 1;
+    const weekDates = getDatesForWeekId(currentWeekId);
 
     const handleToggleAttendance = async (day: DayKey) => {
         const dayIndex = DAYS_OF_WEEK.indexOf(day);
@@ -23,16 +25,17 @@ const EmployeeWeekView: React.FC<EmployeeWeekViewProps> = ({ profile, attendance
             return;
         }
 
-        const currentStatus = attendance[profile.id]?.[day];
+        const dateForDay = weekDates[dayIndex].toISOString().split('T')[0];
+        const currentStatus = attendance[profile.id]?.[dateForDay];
         const originalRecords = attendanceRecords;
 
-        // New Cycle for employees: (undefined | false) -> true -> undefined
-        if (currentStatus === true) {
+        // New Cycle for employees: (undefined | 'Ausente' | 'Pendente') -> 'Presente' -> delete
+        if (currentStatus === 'Presente') {
             // Optimistic update: From present to not marked (delete)
-            setAttendanceRecords(prev => prev.filter(r => !(r.user_id === profile.id && r.week_id === currentWeekId && r.day === day)));
+            setAttendanceRecords(prev => prev.filter(r => !(r.user_id === profile.id && r.date === dateForDay)));
             
             // DB operation
-            const { error } = await supabase.from('attendances').delete().match({ user_id: profile.id, week_id: currentWeekId, day });
+            const { error } = await supabase.from('attendance').delete().match({ user_id: profile.id, date: dateForDay });
             if (error) {
                 alert("Falha ao salvar. A alteração foi desfeita. Verifique sua conexão com a internet. Se o problema persistir, pode ser uma questão de permissão no banco de dados (RLS).");
                 console.error("Falha ao deletar:", error);
@@ -40,17 +43,17 @@ const EmployeeWeekView: React.FC<EmployeeWeekViewProps> = ({ profile, attendance
             }
         } else {
             // Optimistic update: From not marked/absent to present (upsert)
-            setAttendanceRecords(prev => [...prev.filter(r => !(r.user_id === profile.id && r.week_id === currentWeekId && r.day === day)), { user_id: profile.id, week_id: currentWeekId, day, is_present: true }]);
+            setAttendanceRecords(prev => [...prev.filter(r => !(r.user_id === profile.id && r.date === dateForDay)), { user_id: profile.id, date: dateForDay, status: 'Presente' }]);
             
             // DB operation
-            const { data, error } = await supabase.from('attendances').upsert(
-                { user_id: profile.id, week_id: currentWeekId, day, is_present: true },
-                { onConflict: 'user_id,week_id,day' }
+            const { error } = await supabase.from('attendance').upsert(
+                { user_id: profile.id, date: dateForDay, status: 'Presente' },
+                { onConflict: 'user_id,date' }
             ).select();
 
-            if (error || !data || data.length === 0) {
+            if (error) {
                 alert("Falha ao salvar. A alteração foi desfeita. Verifique sua conexão com a internet. Se o problema persistir, pode ser uma questão de permissão no banco de dados (RLS).");
-                console.error("Falha no upsert (presente):", error, data);
+                console.error("Falha no upsert (presente):", error);
                 setAttendanceRecords(originalRecords); // Rollback
             }
         }
@@ -63,10 +66,10 @@ const EmployeeWeekView: React.FC<EmployeeWeekViewProps> = ({ profile, attendance
             <div className="overflow-x-auto">
                 <table className="min-w-full">
                     <tbody className="divide-y divide-gray-700">
-                        {DAYS_OF_WEEK.map((day) => {
-                            const dayIndex = DAYS_OF_WEEK.indexOf(day);
+                        {DAYS_OF_WEEK.map((day, dayIndex) => {
                             const isPast = dayIndex < todayIndex;
-                            const status = attendance[profile.id]?.[day];
+                            const dateForDay = weekDates[dayIndex].toISOString().split('T')[0];
+                            const status = attendance[profile.id]?.[dateForDay];
 
                             return (
                                 <tr key={day} className={`hover:bg-gray-700/50 ${isPast ? 'opacity-60' : ''}`}>
@@ -76,15 +79,15 @@ const EmployeeWeekView: React.FC<EmployeeWeekViewProps> = ({ profile, attendance
                                             onClick={() => handleToggleAttendance(day)}
                                             disabled={isPast}
                                             className={`p-2 rounded-full transition-all duration-200 transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-70 ${
-                                                status === true
+                                                status === 'Presente'
                                                 ? 'bg-green-900 text-green-300 hover:bg-green-800'
-                                                : status === false
+                                                : status === 'Ausente'
                                                 ? 'bg-red-900 text-red-300 hover:bg-red-800'
                                                 : 'bg-gray-600 text-gray-400 hover:bg-gray-500'
                                             }`}
                                             aria-label={`Marcar presença para ${day}`}
                                         >
-                                            {status === true ? <CheckIcon /> : status === false ? <XIcon /> : <span className="h-5 w-5 flex items-center justify-center font-bold">-</span>}
+                                            {status === 'Presente' ? <CheckIcon /> : status === 'Ausente' ? <XIcon /> : <span className="h-5 w-5 flex items-center justify-center font-bold">-</span>}
                                         </button>
                                     </td>
                                 </tr>

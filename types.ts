@@ -4,23 +4,25 @@ export interface Profile {
   id: string; // uuid from auth.users
   updated_at?: string;
   full_name: string;
-  employee_id: string;
+  badge_number: string;
   role: 'super_admin' | 'admin' | 'employee';
 }
+
+export type AttendanceStatus = 'Presente' | 'Ausente' | 'Pendente';
 
 export interface AttendanceRecord {
   id?: number;
   user_id: string;
-  week_id: string;
-  day: DayKey;
-  is_present: boolean;
-  created_at?: string;
+  date: string; // YYYY-MM-DD
+  status: AttendanceStatus;
+  updated_at?: string;
 }
+
 
 // This will be the transformed structure for easier use in components
 export type Attendance = {
   [personId: string]: {
-    [day in DayKey]?: boolean;
+    [date: string]: AttendanceStatus; // date is YYYY-MM-DD
   };
 };
 

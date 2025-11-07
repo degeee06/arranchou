@@ -1,15 +1,14 @@
 import React, { useState, useMemo } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { HistoryEntry, Profile, AttendanceRecord } from '../types';
+import { HistoryEntry, Profile, AttendanceRecord, Attendance } from '../types';
 import HistoryTable from './HistoryTable';
 import { PDFIcon } from './icons';
 import { DAYS_OF_WEEK } from '../constants';
-import { getDatesForWeekId, getReadableWeekRange } from '../utils';
+import { getDatesForWeekId, getReadableWeekRange, getWeekId } from '../utils';
 import { Capacitor } from '@capacitor/core';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
-import { getWeekId } from '../App';
 
 interface HistoryViewProps {
   allProfiles: Profile[];
@@ -21,7 +20,8 @@ const HistoryView: React.FC<HistoryViewProps> = ({ allProfiles, allAttendances }
 
   const historyData: HistoryEntry[] = useMemo(() => {
     const groupedByWeek: { [weekId: string]: AttendanceRecord[] } = allAttendances.reduce((acc, record) => {
-        (acc[record.week_id] = acc[record.week_id] || []).push(record);
+        const weekId = getWeekId(new Date(record.date));
+        (acc[weekId] = acc[weekId] || []).push(record);
         return acc;
     }, {});
     
@@ -31,9 +31,9 @@ const HistoryView: React.FC<HistoryViewProps> = ({ allProfiles, allAttendances }
       const userIdsInWeek = new Set(records.map(r => r.user_id));
       const peopleForWeek = Array.from(userIdsInWeek).map(id => profileMap.get(id)).filter(Boolean) as Profile[];
 
-      const attendanceForWeek = records.reduce((acc, record) => {
+      const attendanceForWeek = records.reduce<Attendance>((acc, record) => {
           if (!acc[record.user_id]) acc[record.user_id] = {};
-          acc[record.user_id][record.day] = record.is_present;
+          acc[record.user_id][record.date] = record.status;
           return acc;
       }, {});
 
@@ -64,10 +64,11 @@ const generatePdf = async (weekData: HistoryEntry) => {
     sortedPeople.forEach((person) => {
       const rowData = [
         person.full_name,
-        ...DAYS_OF_WEEK.map((day) => {
-          const status = attendance[person.id]?.[day];
-          if (status === true) return 'P';
-          if (status === false) return 'X';
+        ...DAYS_OF_WEEK.map((day, index) => {
+          const dateForDay = weekDates[index].toISOString().split('T')[0];
+          const status = attendance[person.id]?.[dateForDay];
+          if (status === 'Presente') return 'P';
+          if (status === 'Ausente') return 'X';
           return '-';
         }),
       ];
@@ -75,8 +76,9 @@ const generatePdf = async (weekData: HistoryEntry) => {
     });
 
     const totalsRow = ['TOTAL'];
-    DAYS_OF_WEEK.forEach((day) => {
-      const presentCount = sortedPeople.filter((p) => attendance[p.id]?.[day] === true).length;
+    DAYS_OF_WEEK.forEach((day, index) => {
+      const dateForDay = weekDates[index].toISOString().split('T')[0];
+      const presentCount = sortedPeople.filter((p) => attendance[p.id]?.[dateForDay] === 'Presente').length;
       totalsRow.push(presentCount.toString());
     });
 
