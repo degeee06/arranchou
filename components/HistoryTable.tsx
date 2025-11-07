@@ -17,10 +17,9 @@ const HistoryTable: React.FC<HistoryTableProps> = ({ weekData }) => {
   };
 
   // Calculate totals per day
-  const dailyTotals = DAYS_OF_WEEK.map((day, index) => {
-    const dateForDay = weekDates[index].toISOString().split('T')[0];
-    const present = people.filter(p => attendance[p.id]?.[dateForDay] === 'Presente').length;
-    const absent = people.filter(p => attendance[p.id]?.[dateForDay] === 'Ausente').length;
+  const dailyTotals = DAYS_OF_WEEK.map(day => {
+    const present = people.filter(p => attendance[p.id]?.[day] === true).length;
+    const absent = people.filter(p => attendance[p.id]?.[day] === false).length;
     return { present, absent };
   });
 
@@ -50,28 +49,21 @@ const HistoryTable: React.FC<HistoryTableProps> = ({ weekData }) => {
         </thead>
         <tbody className="bg-gray-800 divide-y divide-gray-700">
           {people.sort((a,b) => a.full_name.localeCompare(b.full_name)).map(person => {
-            const personTotalPresent = DAYS_OF_WEEK.filter((day, index) => {
-              const dateForDay = weekDates[index].toISOString().split('T')[0];
-              return attendance[person.id]?.[dateForDay] === 'Presente';
-            }).length;
-            const personTotalAbsent = DAYS_OF_WEEK.filter((day, index) => {
-              const dateForDay = weekDates[index].toISOString().split('T')[0];
-              return attendance[person.id]?.[dateForDay] === 'Ausente';
-            }).length;
+            const personTotalPresent = DAYS_OF_WEEK.filter(day => attendance[person.id]?.[day] === true).length;
+            const personTotalAbsent = DAYS_OF_WEEK.filter(day => attendance[person.id]?.[day] === false).length;
             
             return (
               <tr key={person.id} className="hover:bg-gray-700">
                 <td className="px-2 sm:px-4 py-3 whitespace-nowrap text-sm font-medium text-white">
                   {person.full_name}
                 </td>
-                {DAYS_OF_WEEK.map((day, index) => {
-                  const dateForDay = weekDates[index].toISOString().split('T')[0];
-                  const status = attendance[person.id]?.[dateForDay];
+                {DAYS_OF_WEEK.map(day => {
+                  const status = attendance[person.id]?.[day];
                   return (
                     <td key={day} className="px-2 sm:px-4 py-3 whitespace-nowrap text-center">
-                      {status === 'Presente' && <span className="text-green-400 inline-flex"><CheckIcon /></span>}
-                      {status === 'Ausente' && <span className="text-red-400 inline-flex"><XIcon /></span>}
-                      {(status === undefined || status === 'Pendente') && <span className="text-gray-500">-</span>}
+                      {status === true && <span className="text-green-400 inline-flex"><CheckIcon /></span>}
+                      {status === false && <span className="text-red-400 inline-flex"><XIcon /></span>}
+                      {status === undefined && <span className="text-gray-500">-</span>}
                     </td>
                   );
                 })}

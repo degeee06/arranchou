@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { supabase } from '../supabase';
 
 const AuthView: React.FC = () => {
-    const [badgeNumber, setBadgeNumber] = useState('');
+    const [employeeId, setEmployeeId] = useState('');
     const [password, setPassword] = useState('');
     const [fullName, setFullName] = useState('');
     const [loading, setLoading] = useState(false);
@@ -16,35 +16,24 @@ const AuthView: React.FC = () => {
         setError(null);
         setMessage(null);
 
-        // Clean up any stale data from previous attempts
-        localStorage.removeItem('pending_profile_data');
-
-        // Generate a consistent, fake email from the badge number for Supabase Auth
-        const email = `employee_${badgeNumber}@arranchou.app`;
+        // Generate a consistent, fake email from the employee ID for Supabase Auth
+        const email = `employee_${employeeId}@arranchou.app`;
 
         try {
             if (isSignUp) {
-                // Step 1: Store profile data in localStorage to be picked up by App.tsx
-                // after the auth state changes.
-                localStorage.setItem('pending_profile_data', JSON.stringify({
-                    full_name: fullName,
-                    badge_number: badgeNumber,
-                }));
-
-                // Step 2: Sign up the user in Supabase Auth without profile metadata.
-                // This decouples auth user creation from profile table insertion,
-                // making it more resilient to RLS policies or trigger failures.
                 const { error } = await supabase.auth.signUp({
                     email,
                     password,
+                    options: {
+                        data: {
+                            full_name: fullName,
+                            employee_id: employeeId,
+                            role: 'employee',
+                        }
+                    }
                 });
-                
-                if (error) {
-                    throw error; // Let the catch block handle it
-                }
-                
-                // The onAuthStateChange listener in App.tsx will now handle creating the profile.
-                setMessage('Cadastro realizado com sucesso! Se a confirmação de email estiver habilitada, por favor, verifique sua caixa de entrada para ativar a conta.');
+                if (error) throw error;
+                setMessage('Cadastro realizado com sucesso! Você já pode entrar.');
             } else {
                 const { error } = await supabase.auth.signInWithPassword({
                     email,
@@ -54,19 +43,57 @@ const AuthView: React.FC = () => {
                 // Login will be handled by the listener in App.tsx
             }
         } catch (err: any) {
-            console.error("Auth Error:", err);
-            // Always clean up localStorage on any error during the process
-            localStorage.removeItem('pending_profile_data');
+            console.error("Auth Error:", err.message);
 
             if (err.message.includes("Invalid login credentials")) {
                 setError("Nº do Crachá ou senha inválidos.");
-            } else if (err.message.includes("User already registered")) {
-                setError("Este email (derivado do Nº do Crachá) já está em uso. Tente fazer login ou use um Nº de Crachá diferente.");
-            } else if (err.message.includes('profiles_badge_number_key')) {
-                // This error comes from the database if the profile insert fails due to a unique constraint violation.
+            } else if (err.message.includes('profiles_employee_id_key')) {
+                // This is the new, more robust check for the UNIQUE constraint on the database.
                 setError("Este Nº do Crachá já está cadastrado. Tente um número diferente ou faça login.");
-            } else if (err instanceof TypeError && err.message.includes('Failed to fetch')) {
-                 setError("Falha de conexão com o servidor. Verifique sua internet ou se um bloqueador de anúncios está ativo.");
+            } else if (err.message.includes("User already registered")) {
+                console.warn("User already exists in auth, but maybe not in profiles. Attempting login to recover.");
+                // This is our recovery logic for orphan auth users.
+                // If sign-up fails because the user exists, we try to sign in.
+                // If sign-in succeeds, it means their profile was missing. We recreate it.
+                try {
+                    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+                        email,
+                        password,
+                    });
+                    if (signInError) {
+                        // If sign-in fails here, it's a genuine wrong password for an existing user.
+                        setError("Este Nº do Crachá já está cadastrado. Se você já tem uma conta, a senha informada está incorreta.");
+                        return; // Stop execution
+                    }
+                    
+                    if (signInData.user) {
+                         // Sign-in successful, now check if profile exists before creating
+                        const { data: existingProfile } = await supabase.from('profiles').select('id').eq('id', signInData.user.id).single();
+                        
+                        if (!existingProfile) {
+                            const { error: profileError } = await supabase.from('profiles').insert({
+                                id: signInData.user.id,
+                                full_name: fullName,
+                                employee_id: employeeId,
+                                role: 'employee'
+                            });
+
+                            if (profileError) {
+                                console.error("Failed to recreate profile for orphan user:", profileError);
+                                setError("Falha ao recuperar conta. Tente novamente mais tarde.");
+                            } else {
+                                console.log("Successfully recovered and recreated profile for user:", signInData.user.id);
+                                // The onAuthStateChange listener will handle the successful login
+                            }
+                        } else {
+                           // This case is rare, but means the profile exists and the user should just log in.
+                           // The login already succeeded, so the listener will handle it.
+                           console.log("User has an auth entry and a profile. Login will proceed.");
+                        }
+                    }
+                } catch (recoveryErr: any) {
+                    setError("Ocorreu um erro inesperado durante a recuperação da conta. Tente fazer login.");
+                }
             }
             else {
                 setError(err.error_description || err.message);
@@ -112,16 +139,16 @@ const AuthView: React.FC = () => {
                         </div>
                     )}
                     <div className="mb-4">
-                        <label className="block text-gray-300 text-sm font-bold mb-2" htmlFor="badgeNumber">
-                            Nº do Crachá
+                        <label className="block text-gray-300 text-sm font-bold mb-2" htmlFor="employeeId">
+                            Nº do Crachá / Matrícula
                         </label>
                         <input
-                            id="badgeNumber"
+                            id="employeeId"
                             className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-primary focus:border-brand-primary text-white"
                             type="text"
-                            placeholder="Seu número de crachá"
-                            value={badgeNumber}
-                            onChange={(e) => setBadgeNumber(e.target.value)}
+                            placeholder="Seu número de identificação"
+                            value={employeeId}
+                            onChange={(e) => setEmployeeId(e.target.value)}
                             required
                         />
                     </div>

@@ -136,7 +136,7 @@ const handleRemoveUser = async () => {
                 return (
                   <tr key={person.id} className="hover:bg-gray-700">
                     <td className="px-2 sm:px-6 py-4 whitespace-nowrap text-sm font-medium text-white">{person.full_name}</td>
-                    <td className="px-2 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-300">{person.badge_number}</td>
+                    <td className="px-2 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-300">{person.employee_id}</td>
                     <td className="px-2 sm:px-6 py-4 whitespace-nowrap text-sm">
                       <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
                         person.role === 'super_admin' ? 'bg-red-200 text-red-800' :

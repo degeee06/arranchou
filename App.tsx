@@ -9,8 +9,20 @@ import HistoryView from './components/HistoryView';
 import EmployeeWeekView from './components/EmployeeWeekView';
 import ManageUsersView from './components/ManageUsersView';
 import { CalendarIcon, HistoryIcon, UsersIcon } from './components/icons';
-import { getWeekId } from './utils';
 
+// Function to get ISO week number (e.g., 2024-W42)
+export const getWeekId = (date: Date): string => {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  // Set to nearest Thursday: current date + 4 - current day number
+  // Make Sunday's day number 7
+  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+  // Get first day of year
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  // Calculate full weeks to nearest Thursday
+  const weekNo = Math.ceil((((d.valueOf() - yearStart.valueOf()) / 86400000) + 1) / 7);
+  // Return string
+  return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
+};
 
 function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -28,54 +40,26 @@ function App() {
         .from('profiles')
         .select('*')
         .eq('id', currentSession.user.id)
-        .maybeSingle();
+        .maybeSingle(); // Use maybeSingle() to prevent error on missing profile
       if (profileError) throw profileError;
 
-      let currentProfile = userProfileData;
-
-      // Handle new user sign-up: profile needs to be created in a second step.
-      if (!currentProfile) {
-        const pendingProfileJSON = localStorage.getItem('pending_profile_data');
-        if (pendingProfileJSON) {
-          localStorage.removeItem('pending_profile_data'); // Consume the item to prevent re-creation
-          try {
-            const pendingProfile = JSON.parse(pendingProfileJSON);
-            console.log("No profile found for new user, creating one now:", currentSession.user.id);
-            
-            const { data: newProfile, error: insertError } = await supabase
-              .from('profiles')
-              .insert({
-                id: currentSession.user.id,
-                full_name: pendingProfile.full_name,
-                badge_number: pendingProfile.badge_number,
-                // role defaults to 'employee' in the database schema
-              })
-              .select()
-              .single();
-
-            if (insertError) {
-              alert(`Falha ao finalizar o cadastro e criar seu perfil: ${insertError.message}. Você será desconectado.`);
-              await supabase.auth.signOut();
-              return; // Stop execution
-            }
-            currentProfile = newProfile; // Assign the newly created profile to continue the flow
-          } catch (e) {
-            alert("Ocorreu um erro ao finalizar seu cadastro. Você será desconectado.");
-            await supabase.auth.signOut();
-            return; // Stop execution
-          }
-        } else {
-          // This is a true inconsistent state: user is logged in but has no profile, and it wasn't a sign-up flow.
-          alert("Erro: Seu perfil não foi encontrado. Você será desconectado.");
-          await supabase.auth.signOut();
-          return; // Stop execution
-        }
+      // If the user is logged in but has no profile, it's an inconsistent state.
+      // Log them out and prompt them to contact support or re-register.
+      if (!userProfileData) {
+        console.error(`Inconsistent state: User ${currentSession.user.id} authenticated but profile is missing.`);
+        alert("Erro: Seu perfil não foi encontrado. Por favor, tente se cadastrar novamente ou contate o suporte. Você será desconectado.");
+        await supabase.auth.signOut();
+        setLoading(false); // Ensure loading state is turned off
+        return; // Stop execution
       }
-      
-      // If we've reached here, currentProfile is valid (either fetched or newly created)
-      setProfile(currentProfile);
 
-      if (currentProfile.role === 'admin' || currentProfile.role === 'super_admin') {
+
+      // The userProfileData fetched directly from the database IS the source of truth.
+      // No need to check session metadata which can be stale.
+      setProfile(userProfileData);
+
+
+      if (userProfileData.role === 'admin' || userProfileData.role === 'super_admin') {
         const { data: allProfiles, error: profilesError } = await supabase
           .from('profiles')
           .select('*')
@@ -83,12 +67,12 @@ function App() {
         if (profilesError) throw profilesError;
         setProfiles(allProfiles);
       } else {
-        setProfiles([currentProfile]);
+        setProfiles([userProfileData]);
       }
 
       // Fetch all attendance records. Realtime will keep it in sync.
       const { data: allAttendances, error: attendancesError } = await supabase
-        .from('attendance')
+        .from('attendances')
         .select('*');
       if (attendancesError) throw attendancesError;
       setAttendanceRecords(allAttendances);
@@ -166,25 +150,27 @@ function App() {
     if (!session) return;
 
     const channel = supabase
-      .channel('attendance-changes')
+      .channel('attendances-changes')
       .on<AttendanceRecord>(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'attendance' },
+        { event: '*', schema: 'public', table: 'attendances' },
         (payload) => {
+          // This real-time subscription ensures data consistency across sessions
+          // and synchronizes the state with the database, complementing optimistic updates.
           if (payload.eventType === 'INSERT') {
+            // Add new record, removing any potential duplicates from optimistic updates.
             setAttendanceRecords(prev => 
-              [...prev.filter(r => !(r.user_id === payload.new.user_id && r.date === payload.new.date)), payload.new]
+              [...prev.filter(r => !(r.user_id === payload.new.user_id && r.week_id === payload.new.week_id && r.day === payload.new.day)), payload.new]
             );
           } else if (payload.eventType === 'UPDATE') {
-            const newRecord = payload.new;
             setAttendanceRecords(prev =>
-              prev.map(r => (r.id === newRecord.id) ? newRecord : r)
+              prev.map(r => (r.user_id === payload.new.user_id && r.week_id === payload.new.week_id && r.day === payload.new.day) ? payload.new : r)
             );
           } else if (payload.eventType === 'DELETE') {
-            const deletedRecord = payload.old as { id: number };
-            if (deletedRecord.id) {
+            const deletedRecord = payload.old as { user_id: string; week_id: string; day: DayKey };
+            if (deletedRecord.user_id && deletedRecord.week_id && deletedRecord.day) {
                 setAttendanceRecords(prev =>
-                  prev.filter(r => r.id !== deletedRecord.id)
+                  prev.filter(r => !(r.user_id === deletedRecord.user_id && r.week_id === deletedRecord.week_id && r.day === deletedRecord.day))
                 );
             }
           }
@@ -226,7 +212,7 @@ function App() {
       if (!acc[record.user_id]) {
         acc[record.user_id] = {};
       }
-      acc[record.user_id][record.date] = record.status;
+      acc[record.user_id][record.day] = record.is_present;
       return acc;
     }, {});
   }, [attendanceRecords]);
@@ -292,7 +278,7 @@ function App() {
             )}
           </>
         ) : (
-          <EmployeeWeekView 
+          <EmployeeWeekView
             profile={profile}
             attendance={attendanceData}
             attendanceRecords={attendanceRecords}

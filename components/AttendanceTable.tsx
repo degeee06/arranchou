@@ -1,24 +1,19 @@
 import React from 'react';
 import { Profile, Attendance, DayKey } from '../types';
 import { CheckIcon, XIcon, UserPlusIcon } from './icons';
-import { getDatesForWeekId } from '../utils';
-import { DAYS_OF_WEEK } from '../constants';
 
 interface AttendanceTableProps {
   people: Profile[];
   attendance: Attendance;
   currentDay: DayKey;
-  currentWeekId: string;
   isAdmin: boolean;
   onToggleAttendance: (personId: string, day: DayKey) => void;
   onSubstitute: (person: Profile) => void;
 }
 
-const AttendanceTable: React.FC<AttendanceTableProps> = ({ people, attendance, currentDay, currentWeekId, isAdmin, onToggleAttendance, onSubstitute }) => {
+const AttendanceTable: React.FC<AttendanceTableProps> = ({ people, attendance, currentDay, isAdmin, onToggleAttendance, onSubstitute }) => {
   // Para administradores, mostramos todas as pessoas para dar controle total.
   const peopleForCurrentDay = people;
-  
-  const dateForCurrentDay = getDatesForWeekId(currentWeekId)[DAYS_OF_WEEK.indexOf(currentDay)].toISOString().split('T')[0];
 
   if (peopleForCurrentDay.length === 0) {
     return (
@@ -49,7 +44,7 @@ const AttendanceTable: React.FC<AttendanceTableProps> = ({ people, attendance, c
         </thead>
         <tbody className="bg-gray-800 divide-y divide-gray-700">
           {peopleForCurrentDay.map(person => {
-            const status = attendance[person.id]?.[dateForCurrentDay];
+            const status = attendance[person.id]?.[currentDay];
             return (
                 <tr key={person.id} className="hover:bg-gray-700">
                 <td className="px-2 sm:px-6 py-4 whitespace-nowrap text-sm font-medium text-white">
@@ -59,15 +54,15 @@ const AttendanceTable: React.FC<AttendanceTableProps> = ({ people, attendance, c
                     <button
                     onClick={() => onToggleAttendance(person.id, currentDay)}
                     className={`p-2 rounded-full transition-all duration-200 transform hover:scale-110 active:scale-95 ${
-                        status === 'Presente'
+                        status === true
                         ? 'bg-green-900 hover:bg-green-800 text-green-300'
-                        : status === 'Ausente'
+                        : status === false
                         ? 'bg-red-900 hover:bg-red-800 text-red-300'
                         : 'bg-gray-600 text-gray-400 hover:bg-gray-500'
                     }`}
                     aria-label={`Marcar presença para ${person.full_name}`}
                     >
-                    {status === 'Presente' ? <CheckIcon /> : status === 'Ausente' ? <XIcon /> : <span className="h-5 w-5 flex items-center justify-center font-bold">-</span>}
+                    {status === true ? <CheckIcon /> : status === false ? <XIcon /> : <span className="h-5 w-5 flex items-center justify-center font-bold">-</span>}
                     </button>
                 </td>
                 {isAdmin && (

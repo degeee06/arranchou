@@ -1,20 +1,15 @@
 import React from 'react';
 import { Attendance, DayKey, Profile } from '../types';
-import { getDatesForWeekId } from '../utils';
-import { DAYS_OF_WEEK } from '../constants';
 
 interface SummaryProps {
   people: Profile[];
   attendance: Attendance;
   currentDay: DayKey;
-  currentWeekId: string;
 }
 
-const Summary: React.FC<SummaryProps> = ({ people, attendance, currentDay, currentWeekId }) => {
-  const dateForCurrentDay = getDatesForWeekId(currentWeekId)[DAYS_OF_WEEK.indexOf(currentDay)].toISOString().split('T')[0];
-  
+const Summary: React.FC<SummaryProps> = ({ people, attendance, currentDay }) => {
   const presentCount = people.filter(
-    person => attendance[person.id]?.[dateForCurrentDay] === 'Presente'
+    person => attendance[person.id]?.[currentDay]
   ).length;
 
   return (
