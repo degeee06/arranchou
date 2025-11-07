@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+// useAuth.ts
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../services/supabase';
 import { Session, User } from '@supabase/auth-js';
 import { Profile } from '../types';
@@ -7,18 +8,20 @@ export function useAuth() {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  const hasFetchedProfile = useRef(false); // 🔹 Novo: controla se já buscou o perfil
 
   useEffect(() => {
     async function loadInitialSession() {
       try {
-        // 🔹 1. Verifica se há sessão salva no navegador
+        setLoading(true);
         const { data } = await supabase.auth.getSession();
         const session = data?.session;
 
         setUser(session?.user ?? null);
 
-        if (session?.user) {
-          // 🔹 2. Busca o perfil do usuário logado
+        if (session?.user && !hasFetchedProfile.current) {
+          hasFetchedProfile.current = true;
+          
           const { data: profileData, error } = await supabase
             .from('profiles')
             .select('*')
@@ -32,19 +35,23 @@ export function useAuth() {
         setUser(null);
         setProfile(null);
       } finally {
-        // 🔹 3. Agora pode renderizar a tela
         setLoading(false);
       }
     }
 
     loadInitialSession();
 
-    // 🔹 4. Listener que atualiza o estado se o usuário logar/deslogar
+    // 🔹 Listener melhorado
     const { data: authListener } = supabase.auth.onAuthStateChange(
-      async (_event: string, session: Session | null) => {
+      async (event: string, session: Session | null) => {
+        console.log('Auth event:', event); // Para debug
+        
         setUser(session?.user ?? null);
 
-        if (session?.user) {
+        // 🔹 Só busca perfil em eventos específicos e se não buscou antes
+        if (session?.user && !hasFetchedProfile.current) {
+          hasFetchedProfile.current = true;
+          
           const { data, error } = await supabase
             .from('profiles')
             .select('*')
@@ -52,7 +59,9 @@ export function useAuth() {
             .single();
 
           if (!error) setProfile(data);
-        } else {
+        } else if (!session?.user) {
+          // 🔹 Reset quando desloga
+          hasFetchedProfile.current = false;
           setProfile(null);
         }
       }
@@ -64,6 +73,7 @@ export function useAuth() {
   }, []);
 
   const logout = async () => {
+    hasFetchedProfile.current = false; // 🔹 Reset no logout
     const { error } = await supabase.auth.signOut();
     if (error) console.error('Erro ao sair:', error.message);
   };
