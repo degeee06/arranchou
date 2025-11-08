@@ -1,5 +1,14 @@
-// FIX: Add a triple-slash directive to include Vite client types, which defines `import.meta.env`.
-/// <reference types="vite/client" />
+// FIX: Manually define types for import.meta.env as a workaround for environments
+// where `/// <reference types="vite/client" />` may not resolve correctly.
+// This ensures that VITE_ environment variables are properly typed.
+interface ImportMetaEnv {
+  readonly VITE_SUPABASE_URL: string;
+  readonly VITE_SUPABASE_ANON_KEY: string;
+}
+
+interface ImportMeta {
+  readonly env: ImportMetaEnv;
+}
 
 import { createClient } from '@supabase/supabase-js';
 
