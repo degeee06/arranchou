@@ -5,13 +5,15 @@
 
 // @ts-ignore
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+// FIX: Using `serve` from the Deno standard library for broader compatibility than the newer `Deno.serve`.
+import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-async function handleRequest(req: Request) {
+serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
@@ -82,6 +84,4 @@ async function handleRequest(req: Request) {
       status: 500,
     });
   }
-}
-
-Deno.serve(handleRequest);
+});

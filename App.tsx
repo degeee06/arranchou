@@ -191,7 +191,11 @@ const fetchData = useCallback(async (currentSession: Session) => {
 
   // Realtime listener for attendance changes
   useEffect(() => {
-    if (!session) return;
+    // FIX: Only subscribe after the initial load is complete and we have a session.
+    // This prevents a race condition where realtime updates are overwritten by the initial fetch.
+    if (loading || !session) {
+      return;
+    }
 
     const channel = supabase
       .channel('attendances-changes')
@@ -222,7 +226,7 @@ const fetchData = useCallback(async (currentSession: Session) => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [session]);
+  }, [session, loading]); // Depend on 'loading' to trigger subscription after fetch is done.
 
 
   const handleLogout = async () => {
