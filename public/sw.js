@@ -41,6 +41,12 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const requestUrl = new URL(event.request.url);
 
+  // *** FIX: DO NOT INTERCEPT SUPABASE API CALLS ***
+  // Let the browser handle API requests to Supabase directly.
+  if (requestUrl.hostname === 'byxpywgopefpdicbymol.supabase.co') {
+    return; // Exits the listener, allowing the request to proceed normally.
+  }
+
   // Stale-While-Revalidate for CDN assets
   if (CDN_ORIGINS.some(origin => requestUrl.origin === origin)) {
     event.respondWith(

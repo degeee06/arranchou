@@ -1,5 +1,5 @@
-// FIX: Replace broken Supabase types reference with the standard Deno namespace reference to resolve type errors.
-/// <reference lib="deno.ns" />
+// FIX: Replaced broken Deno types reference to resolve type errors for the Deno global object.
+/// <reference types="https://esm.sh/@supabase/functions-js/src/edge-runtime.d.ts" />
 
 // @ts-ignore
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
