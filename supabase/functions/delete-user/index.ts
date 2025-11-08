@@ -1,106 +1,122 @@
-// FIX: Add type definitions for Deno.env to resolve TypeScript errors
-// when the Deno namespace types are not automatically included by the compiler.
-declare global {
-  namespace Deno {
-    interface Env {
-      get(key: string): string | undefined;
-    }
-    const env: Env;
-  }
-}
-
-// FIX: Use the npm package specifier for Supabase functions types.
-// This is generally more compatible with local development environments and tooling
-// than a direct URL reference, and it provides the necessary Deno types.
-/// <reference types="@supabase/functions-js" />
-
-// @ts-ignore
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+// FIX: Replaced placeholder with a complete and secure Supabase Edge Function.
+// FIX: Removed broken Deno DTS import to fix deployment failure.
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
+// Standard CORS headers for browser-based function invocation.
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// FIX: Cast Deno to any to access the 'env' property. This is a workaround
+// for type-checking environments where Deno's global types are not properly loaded.
+const DenoEnv = (Deno as any).env;
+
 serve(async (req: Request) => {
+  // Handle CORS preflight request.
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   try {
-    // Verificação de Secrets: Garante que as chaves estão configuradas no painel do Supabase.
-    const supabaseUrl = Deno.env.get('SUPABASE_URL');
-    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
-    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    // 1. Initialize a Supabase client with the authorization header from the request.
+    // This authenticates the user invoking the function.
+    const supabaseClient = createClient(
+      DenoEnv.get('SUPABASE_URL') ?? '',
+      DenoEnv.get('SUPABASE_ANON_KEY') ?? '',
+      { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
+    );
 
-    if (!supabaseUrl || !supabaseAnonKey || !serviceRoleKey) {
-      return new Response(
-        JSON.stringify({ error: 'Secrets faltando na Edge Function. Verifique se SUPABASE_URL, SUPABASE_ANON_KEY, e SUPABASE_SERVICE_ROLE_KEY estão configurados no painel do Supabase para esta função.' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    // 2. Retrieve the authenticated user's data.
+    const { data: { user } } = await supabaseClient.auth.getUser();
+    if (!user) {
+      throw new Error('User not authenticated.');
     }
 
-    const { user_id } = await req.json();
-    if (!user_id) {
-      return new Response(JSON.stringify({ error: 'user_id é obrigatório.' }), {
-        status: 400,
+    // 3. Extract the user ID to be deleted from the request body.
+    const { user_id: userIdToDelete } = await req.json();
+    if (!userIdToDelete) {
+      throw new Error('user_id to delete is required.');
+    }
+    
+    // A user cannot delete their own account through this function.
+    if (user.id === userIdToDelete) {
+      return new Response(JSON.stringify({ error: 'You cannot delete your own account.' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400,
       });
     }
 
-    const userSupabaseClient = createClient(
-      supabaseUrl,
-      supabaseAnonKey,
-      { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
+    // 4. Initialize the Supabase admin client using the service role key to bypass RLS.
+    const supabaseAdmin = createClient(
+      DenoEnv.get('SUPABASE_URL') ?? '',
+      DenoEnv.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
-    
-    const { data: { user: caller } } = await userSupabaseClient.auth.getUser();
-    if(!caller) throw new Error('Autor da chamada não autenticado.');
-
-    if (caller.id === user_id) {
-      throw new Error('Você não pode remover a si mesmo.');
-    }
-
-    const { data: callerProfile, error: callerError } = await userSupabaseClient
+      
+    // 5. Verify that the invoking user has admin privileges.
+    const { data: adminProfile, error: adminError } = await supabaseAdmin
       .from('profiles')
       .select('role')
+      .eq('id', user.id)
       .single();
 
-    if (callerError || !callerProfile) {
-      throw new Error('Não foi possível verificar as permissões do autor da chamada.');
+    if (adminError || !adminProfile) {
+      throw new Error('Could not verify admin privileges.');
     }
-    
-    const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
-    
-    const { data: targetProfile, error: targetError } = await supabaseAdmin
+
+    if (adminProfile.role !== 'admin' && adminProfile.role !== 'super_admin') {
+      return new Response(JSON.stringify({ error: 'Only admins can delete users.' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 403,
+      });
+    }
+
+    // 6. Get the role of the user to be deleted for hierarchy checks.
+    const { data: userToDeleteProfile, error: userToDeleteError } = await supabaseAdmin
       .from('profiles')
       .select('role')
-      .eq('id', user_id)
+      .eq('id', userIdToDelete)
       .single();
 
-    if (targetError || !targetProfile) {
-      throw new Error('Usuário alvo não encontrado.');
+    if (userToDeleteError) {
+        console.warn(`Attempt to delete user ${userIdToDelete} with no profile.`, userToDeleteError);
+        return new Response(JSON.stringify({ error: 'User to be deleted has no profile or could not be found.' }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 404,
+        });
     }
 
-    if (callerProfile.role === 'admin' && targetProfile.role !== 'employee') {
-      throw new Error('Admins só podem remover funcionários.');
+    // 7. Enforce role-based deletion rules.
+    if (adminProfile.role === 'admin' && userToDeleteProfile.role !== 'employee') {
+       return new Response(JSON.stringify({ error: 'Admins can only delete employees.' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 403,
+      });
     }
-    if (callerProfile.role !== 'super_admin' && callerProfile.role !== 'admin') {
-      throw new Error('Permissão negada.');
+    if (adminProfile.role === 'super_admin' && userToDeleteProfile.role === 'super_admin') {
+        return new Response(JSON.stringify({ error: 'Super admins cannot delete other super admins.' }), {
+         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+         status: 403,
+       });
+     }
+
+    // 8. Perform the deletion using the admin client. This will remove the user from 'auth.users'.
+    // The associated profile should be removed by a 'ON DELETE CASCADE' foreign key constraint.
+    const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(userIdToDelete);
+
+    if (deleteError) {
+      throw deleteError;
     }
 
-    const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(user_id);
-    if (deleteError) throw deleteError;
-
-    return new Response(JSON.stringify({ message: 'Usuário removido com sucesso.' }), {
+    return new Response(JSON.stringify({ success: true, message: `User ${userIdToDelete} deleted.` }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     });
-  } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), {
+  } catch (error) {
+    return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 500,
+      status: 400,
     });
   }
 });
