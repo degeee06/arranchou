@@ -39,63 +39,95 @@ function App() {
   const [currentWeekId] = useState<string>(getWeekId(new Date()));
   const [view, setView] = useState<'current' | 'history' | 'manage_users'>('current');
 
-  const fetchData = useCallback(async (currentSession: Session) => {
-    try {
-      setLoading(true);
-      const { data: userProfileData, error: profileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', currentSession.user.id)
-        .single(); 
+const fetchData = useCallback(async (currentSession: Session) => {
+  try {
+    setLoading(true);
+    
+    // 1. Primeiro busca APENAS o próprio perfil (sempre funciona com RLS)
+    const { data: userProfileData, error: profileError } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', currentSession.user.id)
+      .single();
 
-      if (profileError && profileError.code !== 'PGRST116') { // PGRST116 = no rows found
-          throw profileError;
-      }
-      
-      if (!userProfileData) {
-        console.error(`Inconsistent state: User ${currentSession.user.id} authenticated but profile is missing.`);
-        alert("Erro: Seu perfil não foi encontrado. Por favor, tente se cadastrar novamente ou contate o suporte. Você será desconectado.");
-        await supabase.auth.signOut();
-        setLoading(false);
-        return;
-      }
+    if (profileError) {
+      console.error('Profile fetch error:', profileError);
+      throw profileError;
+    }
+    
+    if (!userProfileData) {
+      console.error(`Inconsistent state: User ${currentSession.user.id} authenticated but profile is missing.`);
+      alert("Erro: Seu perfil não foi encontrado. Por favor, tente se cadastrar novamente ou contate o suporte. Você será desconectado.");
+      await supabase.auth.signOut();
+      setLoading(false);
+      return;
+    }
 
-      setProfile(userProfileData);
+    setProfile(userProfileData);
 
-      let relevantProfiles = [userProfileData];
-      if (userProfileData.role === 'admin' || userProfileData.role === 'super_admin') {
+    // 2. Se for admin, tenta buscar dados adicionais
+    if (userProfileData.role === 'admin' || userProfileData.role === 'super_admin') {
+      try {
+        // Tenta buscar todos os profiles (se política de admin funcionar)
         const { data: allProfiles, error: profilesError } = await supabase
           .from('profiles')
           .select('*')
           .order('full_name', { ascending: true });
-        if (profilesError) throw profilesError;
-        setProfiles(allProfiles);
-        relevantProfiles = allProfiles;
-      } else {
-        setProfiles([userProfileData]);
-      }
+        
+        if (profilesError) {
+          console.warn('Admin cannot fetch all profiles, using own profile only:', profilesError);
+          setProfiles([userProfileData]);
+        } else {
+          setProfiles(allProfiles || []);
+        }
 
-      const relevantUserIds = relevantProfiles.map(p => p.id);
+        // Busca attendances sem filtro (admin pode ver tudo se política funcionar)
+        const recentWeeks = getPastWeeksIds(8);
+        const { data: recentAttendances, error: attendancesError } = await supabase
+          .from('attendances')
+          .select('*')
+          .in('week_id', recentWeeks);
+
+        if (attendancesError) {
+          console.warn('Admin cannot fetch all attendances:', attendancesError);
+          setAttendanceRecords([]);
+        } else {
+          setAttendanceRecords(recentAttendances || []);
+        }
+
+      } catch (adminError) {
+        console.error('Admin data fetch failed, using fallback:', adminError);
+        // Fallback: usa apenas dados básicos
+        setProfiles([userProfileData]);
+        setAttendanceRecords([]);
+      }
+    } else {
+      // 3. Usuário normal - apenas seus dados (sempre funciona com RLS)
+      setProfiles([userProfileData]);
       
-      // OPTIMIZATION: Instead of fetching ALL attendances, fetch only for recent weeks.
-      // This reduces load and potential RLS issues on large datasets.
-      const recentWeeks = getPastWeeksIds(8); // Current week + last 8 weeks
-      const { data: recentAttendances, error: attendancesError } = await supabase
+      // Apenas suas próprias attendances
+      const recentWeeks = getPastWeeksIds(8);
+      const { data: userAttendances, error: attendancesError } = await supabase
         .from('attendances')
         .select('*')
-        .in('user_id', relevantUserIds)
+        .eq('user_id', currentSession.user.id)  // 🔥 CRÍTICO: filtra por user_id
         .in('week_id', recentWeeks);
 
-      if (attendancesError) throw attendancesError;
-      setAttendanceRecords(recentAttendances);
-
-    } catch (error) {
-      console.error('Error fetching data:', error);
-      alert('Falha ao carregar os dados.');
-    } finally {
-      setLoading(false);
+      if (attendancesError) {
+        console.error('User attendances fetch error:', attendancesError);
+        setAttendanceRecords([]);
+      } else {
+        setAttendanceRecords(userAttendances || []);
+      }
     }
-  }, []);
+
+  } catch (error) {
+    console.error('Error fetching data:', error);
+    alert('Falha ao carregar os dados.');
+  } finally {
+    setLoading(false);
+  }
+}, []);
 
   // Auth listener
   useEffect(() => {
