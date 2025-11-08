@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Profile } from '../types';
 import { supabase } from '../supabase';
 import Modal from './Modal';
-import { DotsVerticalIcon } from './icons';
+import { DotsVerticalIcon, UserPlusIcon } from './icons';
 
 interface ManageUsersViewProps {
   profiles: Profile[];
@@ -21,6 +21,14 @@ const ManageUsersView: React.FC<ManageUsersViewProps> = ({ profiles, setProfiles
   const [error, setError] = useState<string | null>(null);
   const [removeConfirm, setRemoveConfirm] = useState<Profile | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  
+  // State for the new user modal
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [newFullName, setNewFullName] = useState('');
+  const [newEmployeeId, setNewEmployeeId] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [isCreatingUser, setIsCreatingUser] = useState(false);
+
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -63,26 +71,19 @@ const ManageUsersView: React.FC<ManageUsersViewProps> = ({ profiles, setProfiles
 const handleRemoveUser = async () => {
     if (!removeConfirm) return;
 
-    const userToDelete = removeConfirm; // Capture the user object to use in `finally`
+    const userToDelete = removeConfirm;
 
     setLoading(prev => ({ ...prev, [userToDelete.id]: true }));
     setError(null);
 
     try {
-      // Directly invoke the function to delete the auth user.
-      // This is expected to trigger a cascade delete on the 'profiles' table and other related data,
-      // ensuring a complete and permanent removal of the user from the system.
       const { error: functionError } = await supabase.functions.invoke('delete-user', {
           body: { user_id: userToDelete.id },
       });
 
       if (functionError) {
-          // If the function fails, inform the admin. The user is not deleted.
           throw new Error(`A remoção falhou. A conta de autenticação do usuário não pôde ser removida. Detalhes: ${functionError.message}`);
       }
-
-      // On success, the realtime subscription in App.tsx will eventually remove the user
-      // from the UI state. We also update it here for immediate feedback.
       setProfiles(prevProfiles => prevProfiles.filter(p => p.id !== userToDelete.id));
       setRemoveConfirm(null);
 
@@ -91,6 +92,42 @@ const handleRemoveUser = async () => {
         setError(err.message || 'Ocorreu um erro desconhecido durante a remoção.');
     } finally {
         setLoading(prev => ({ ...prev, [userToDelete.id]: false }));
+    }
+};
+
+const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsCreatingUser(true);
+    setError(null);
+
+    try {
+        const { data, error } = await supabase.functions.invoke('create-user', {
+            body: {
+                full_name: newFullName,
+                employee_id: newEmployeeId,
+                password: newPassword,
+            },
+        });
+
+        if (error) {
+            throw error;
+        }
+
+        // A realtime subscription in App.tsx should add the user,
+        // but we can add it here for immediate feedback if needed.
+        // The trigger on auth.users handles profile creation.
+        
+        // Reset form and close modal
+        setIsCreateModalOpen(false);
+        setNewFullName('');
+        setNewEmployeeId('');
+        setNewPassword('');
+
+    } catch (err: any) {
+        console.error('Error creating user:', err);
+        setError(err.message || 'Falha ao criar usuário. O Nº do Crachá pode já existir.');
+    } finally {
+        setIsCreatingUser(false);
     }
 };
 
@@ -106,7 +143,17 @@ const handleRemoveUser = async () => {
   return (
     <>
       <div className="bg-gray-800 rounded-lg shadow p-4 sm:p-6">
-        <h2 className="text-xl font-bold mb-4 text-gray-200">Gerenciar Usuários</h2>
+        <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-bold text-gray-200">Gerenciar Usuários</h2>
+            <button
+                onClick={() => { setIsCreateModalOpen(true); setError(null); }}
+                className="flex items-center gap-2 bg-brand-primary hover:bg-brand-secondary text-white font-bold py-2 px-4 rounded-md transition duration-300"
+            >
+                <UserPlusIcon />
+                <span className="hidden sm:inline">Novo Usuário</span>
+            </button>
+        </div>
+
         {error && <p className="mb-4 text-center text-red-400 text-sm bg-red-900/50 p-3 rounded-md">{error}</p>}
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-700">
@@ -203,6 +250,64 @@ const handleRemoveUser = async () => {
         </div>
       </div>
 
+      {/* Create User Modal */}
+      <Modal 
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        title="Criar Novo Usuário"
+      >
+        <form onSubmit={handleCreateUser} className="flex flex-col gap-4 mt-4">
+             <div className="mb-2">
+                <label className="block text-gray-300 text-sm font-bold mb-2" htmlFor="newFullName">
+                    Nome Completo
+                </label>
+                <input
+                    id="newFullName"
+                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-primary focus:border-brand-primary text-white"
+                    type="text"
+                    placeholder="Nome completo do funcionário"
+                    value={newFullName}
+                    onChange={(e) => setNewFullName(e.target.value)}
+                    required
+                />
+            </div>
+            <div className="mb-2">
+                <label className="block text-gray-300 text-sm font-bold mb-2" htmlFor="newEmployeeId">
+                    Nº do Crachá / Matrícula
+                </label>
+                <input
+                    id="newEmployeeId"
+                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-primary focus:border-brand-primary text-white"
+                    type="text"
+                    placeholder="Número de identificação único"
+                    value={newEmployeeId}
+                    onChange={(e) => setNewEmployeeId(e.target.value)}
+                    required
+                />
+            </div>
+            <div className="mb-4">
+                <label className="block text-gray-300 text-sm font-bold mb-2" htmlFor="newPassword">
+                    Senha Provisória
+                </label>
+                <input
+                    id="newPassword"
+                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-primary focus:border-brand-primary text-white"
+                    type="password"
+                    placeholder="Uma senha forte"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    required
+                />
+                 <p className="text-xs text-gray-400 mt-2">O funcionário poderá alterar esta senha depois, se necessário.</p>
+            </div>
+            {error && <p className="text-center text-red-400 text-sm">{error}</p>}
+            <button type="submit" className="w-full bg-brand-primary hover:bg-brand-secondary text-white font-bold py-2 px-4 rounded-md transition duration-300 disabled:bg-gray-600" disabled={isCreatingUser}>
+                {isCreatingUser ? 'Criando...' : 'Criar Usuário'}
+            </button>
+        </form>
+      </Modal>
+
+      {/* Remove User Modal */}
       <Modal 
         isOpen={!!removeConfirm}
         onClose={() => setRemoveConfirm(null)}
