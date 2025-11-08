@@ -1,5 +1,5 @@
-// FIX: Replaced the Deno types reference with the recommended npm specifier. This improves stability and helps prevent type resolution errors for the Deno global object (e.g., Deno.env, Deno.serve).
-/// <reference types="npm:@supabase/functions-js@2.4.1" />
+// FIX: Replaced the Deno types reference from an npm specifier to a direct URL. This ensures type definitions for Deno globals (like Deno.env and Deno.serve) are loaded correctly, even in environments that struggle to resolve npm specifiers in triple-slash directives.
+/// <reference types="https://esm.sh/@supabase/functions-js@2.4.1/src/edge-runtime.d.ts" />
 
 // @ts-ignore
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';

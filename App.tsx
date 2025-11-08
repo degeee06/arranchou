@@ -13,16 +13,22 @@ import { CalendarIcon, HistoryIcon, UsersIcon } from './components/icons';
 // Function to get ISO week number (e.g., 2024-W42)
 export const getWeekId = (date: Date): string => {
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  // Set to nearest Thursday: current date + 4 - current day number
-  // Make Sunday's day number 7
   d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
-  // Get first day of year
   const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  // Calculate full weeks to nearest Thursday
   const weekNo = Math.ceil((((d.valueOf() - yearStart.valueOf()) / 86400000) + 1) / 7);
-  // Return string
   return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
 };
+
+function getPastWeeksIds(numWeeks: number): string[] {
+    const ids = [];
+    const today = new Date();
+    for(let i=0; i < numWeeks; i++){
+        const pastDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() - (i * 7));
+        ids.push(getWeekId(pastDate));
+    }
+    return ids;
+}
+
 
 function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -40,25 +46,23 @@ function App() {
         .from('profiles')
         .select('*')
         .eq('id', currentSession.user.id)
-        .maybeSingle(); // Use maybeSingle() to prevent error on missing profile
-      if (profileError) throw profileError;
+        .single(); 
 
-      // If the user is logged in but has no profile, it's an inconsistent state.
-      // Log them out and prompt them to contact support or re-register.
+      if (profileError && profileError.code !== 'PGRST116') { // PGRST116 = no rows found
+          throw profileError;
+      }
+      
       if (!userProfileData) {
         console.error(`Inconsistent state: User ${currentSession.user.id} authenticated but profile is missing.`);
         alert("Erro: Seu perfil não foi encontrado. Por favor, tente se cadastrar novamente ou contate o suporte. Você será desconectado.");
         await supabase.auth.signOut();
-        setLoading(false); // Ensure loading state is turned off
-        return; // Stop execution
+        setLoading(false);
+        return;
       }
 
-
-      // The userProfileData fetched directly from the database IS the source of truth.
-      // No need to check session metadata which can be stale.
       setProfile(userProfileData);
 
-
+      let relevantProfiles = [userProfileData];
       if (userProfileData.role === 'admin' || userProfileData.role === 'super_admin') {
         const { data: allProfiles, error: profilesError } = await supabase
           .from('profiles')
@@ -66,16 +70,24 @@ function App() {
           .order('full_name', { ascending: true });
         if (profilesError) throw profilesError;
         setProfiles(allProfiles);
+        relevantProfiles = allProfiles;
       } else {
         setProfiles([userProfileData]);
       }
 
-      // Fetch all attendance records. Realtime will keep it in sync.
-      const { data: allAttendances, error: attendancesError } = await supabase
+      const relevantUserIds = relevantProfiles.map(p => p.id);
+      
+      // OPTIMIZATION: Instead of fetching ALL attendances, fetch only for recent weeks.
+      // This reduces load and potential RLS issues on large datasets.
+      const recentWeeks = getPastWeeksIds(8); // Current week + last 8 weeks
+      const { data: recentAttendances, error: attendancesError } = await supabase
         .from('attendances')
-        .select('*');
+        .select('*')
+        .in('user_id', relevantUserIds)
+        .in('week_id', recentWeeks);
+
       if (attendancesError) throw attendancesError;
-      setAttendanceRecords(allAttendances);
+      setAttendanceRecords(recentAttendances);
 
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -155,10 +167,7 @@ function App() {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'attendances' },
         (payload) => {
-          // This real-time subscription ensures data consistency across sessions
-          // and synchronizes the state with the database, complementing optimistic updates.
           if (payload.eventType === 'INSERT') {
-            // Add new record, removing any potential duplicates from optimistic updates.
             setAttendanceRecords(prev => 
               [...prev.filter(r => !(r.user_id === payload.new.user_id && r.week_id === payload.new.week_id && r.day === payload.new.day)), payload.new]
             );
@@ -188,13 +197,8 @@ function App() {
     const { error } = await supabase.auth.signOut();
     if (error) {
       console.error("Error signing out:", error);
-      // Handle the case where the session is already gone client-side.
-      // This is not a critical error for the user, as the goal is to be logged out.
-      // We can manually clear the state to ensure the UI updates correctly.
       if (error.name === 'AuthSessionMissingError') {
         console.warn('Session was already missing on sign out. Clearing state manually.');
-        // Manually clear all user-related state, since the onAuthStateChange
-        // listener won't fire if the session was already gone.
         setSession(null);
         setProfile(null);
         setProfiles([]);
@@ -203,10 +207,8 @@ function App() {
         alert("Ocorreu um erro ao sair. Por favor, tente novamente.");
       }
     }
-    // On success, the onAuthStateChange listener will clear the state.
   };
   
-  // Transform attendance records into a more usable format
   const attendanceData: Attendance = useMemo(() => {
     return attendanceRecords.reduce<Attendance>((acc, record) => {
       if (!acc[record.user_id]) {
