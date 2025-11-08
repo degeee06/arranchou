@@ -1,8 +1,15 @@
+// FIX: Add a triple-slash directive to include Vite client types, which defines `import.meta.env`.
+/// <reference types="vite/client" />
+
 import { createClient } from '@supabase/supabase-js';
 
-// ATENÇÃO: Estas são as suas credenciais do Supabase.
-// Mantenha-as atualizadas caso mudem no seu painel do Supabase.
-const supabaseUrl = "https://byxpywgopefpdicbymol.supabase.co";
-const supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ5eHB5d2dvcGVmcGRpY2J5bW9sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE5NDY3MjIsImV4cCI6MjA3NzUyMjcyMn0.TEghGxiGht2o-DptBLai2Zq1C_9h02l3_G0dFdg3n68";
+// Lê as variáveis de ambiente fornecidas pelo Vite/Vercel.
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+// Validação para garantir que as variáveis foram carregadas.
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error("As variáveis de ambiente VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY são obrigatórias.");
+}
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
