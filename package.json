@@ -1,5 +1,5 @@
 {
-  "name": "app",
+  "name": "arranchou-supabase",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -9,21 +9,19 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "react-dom": "^19.2.0",
     "react": "^19.2.0",
-    "@supabase/supabase-js": "2",
-    "@capacitor/android": "^7.4.4",
-    "@capacitor/app": "^7.1.0",
-    "@capacitor/browser": "^7.0.2",
-    "@capacitor/cli": "^7.4.4",
+    "react-dom": "^19.2.0",
+    "jspdf": "^3.0.3",
+    "jspdf-autotable": "^5.0.2",
     "@capacitor/core": "^7.4.4",
-    "@capacitor/ios": "^7.4.4"
+    "@capacitor/filesystem": "^7.1.4",
+    "@capacitor/share": "^7.0.2",
+    "@supabase/supabase-js": "^2.45.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
     "typescript": "~5.8.2",
-    "vite": "^6.2.0",
-    "@capacitor/assets": "^3.0.5"
+    "vite": "^6.2.0"
   }
 }
