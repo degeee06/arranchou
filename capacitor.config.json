@@ -1,7 +1,7 @@
 {
   "appId": "com.arranchou.app",
   "appName": "Arranchou",
-  "webDir": ".",
+  "webDir": "dist",
   "backgroundColor": "#111827",
   "server": {
     "androidScheme": "https"
