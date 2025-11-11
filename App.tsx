@@ -246,14 +246,16 @@ const fetchData = useCallback(async (currentSession: Session) => {
   };
   
   const attendanceData: Attendance = useMemo(() => {
-    return attendanceRecords.reduce<Attendance>((acc, record) => {
+    return attendanceRecords
+      .filter(record => record.week_id === currentWeekId)
+      .reduce<Attendance>((acc, record) => {
       if (!acc[record.user_id]) {
         acc[record.user_id] = {};
       }
       acc[record.user_id][record.day] = record.is_present;
       return acc;
     }, {});
-  }, [attendanceRecords]);
+  }, [attendanceRecords, currentWeekId]);
 
   if (loading) {
     return (
