@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { supabase } from '../supabase';
 import { Profile, DayKey, Attendance, AttendanceRecord } from '../types';
 import { DAYS_OF_WEEK } from '../constants';
 import { CheckIcon, XIcon } from './icons';
+import { getDatesForWeekId } from '../utils';
 
 interface EmployeeWeekViewProps {
   profile: Profile;
@@ -13,6 +14,8 @@ interface EmployeeWeekViewProps {
 }
 
 const EmployeeWeekView: React.FC<EmployeeWeekViewProps> = ({ profile, attendance, attendanceRecords, setAttendanceRecords, currentWeekId }) => {
+    
+    const weekDates = useMemo(() => getDatesForWeekId(currentWeekId), [currentWeekId]);
 
     const handleToggleAttendance = async (day: DayKey) => {
         const originalRecords = attendanceRecords;
@@ -55,8 +58,28 @@ const EmployeeWeekView: React.FC<EmployeeWeekViewProps> = ({ profile, attendance
             <div className="overflow-x-auto">
                 <table className="min-w-full">
                     <tbody className="divide-y divide-gray-700">
-                        {DAYS_OF_WEEK.map((day) => {
+                        {DAYS_OF_WEEK.map((day, index) => {
                             const status = attendance[profile.id]?.[day];
+                            
+                            const now = new Date();
+                            const dayDate = weekDates[index];
+
+                            // Normalize dates to compare only the day, ignoring time
+                            const todayNormalized = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                            const dayDateNormalized = new Date(dayDate.getFullYear(), dayDate.getMonth(), dayDate.getDate());
+
+                            const isPastDay = dayDateNormalized < todayNormalized;
+                            const isToday = dayDateNormalized.getTime() === todayNormalized.getTime();
+                            const isAfterMidday = now.getHours() >= 12;
+
+                            const isDisabled = isPastDay || (isToday && isAfterMidday);
+
+                            let buttonTitle = `Marcar presença para ${day}`;
+                            if (isPastDay) {
+                                buttonTitle = "Não é possível alterar a presença para dias passados.";
+                            } else if (isToday && isAfterMidday) {
+                                buttonTitle = "O prazo para alterar a presença hoje encerrou ao meio-dia.";
+                            }
 
                             return (
                                 <tr key={day} className="hover:bg-gray-700/50">
@@ -64,14 +87,20 @@ const EmployeeWeekView: React.FC<EmployeeWeekViewProps> = ({ profile, attendance
                                     <td className="px-4 py-3 whitespace-nowrap text-center">
                                         <button
                                             onClick={() => handleToggleAttendance(day)}
-                                            className={`p-2 rounded-full transition-all duration-200 transform active:scale-95 ${
+                                            disabled={isDisabled}
+                                            title={buttonTitle}
+                                            className={`p-2 rounded-full transition-all duration-200 transform ${
+                                                isDisabled
+                                                ? 'opacity-50 cursor-not-allowed'
+                                                : 'active:scale-95'
+                                            } ${
                                                 status === true
                                                 ? 'bg-green-900 text-green-300 hover:bg-green-800'
                                                 : status === false
-                                                ? 'bg-red-900 text-red-300 hover:bg-red-800'
+                                                ? 'bg-red-900 text-red-300' // False status is read-only for employees now
                                                 : 'bg-gray-600 text-gray-400 hover:bg-gray-500'
                                             }`}
-                                            aria-label={`Marcar presença para ${day}`}
+                                            aria-label={buttonTitle}
                                         >
                                             {status === true ? <CheckIcon /> : status === false ? <XIcon /> : <span className="h-5 w-5 flex items-center justify-center font-bold">-</span>}
                                         </button>
@@ -85,7 +114,7 @@ const EmployeeWeekView: React.FC<EmployeeWeekViewProps> = ({ profile, attendance
              <p className="text-xs text-gray-500 mt-4 flex items-center gap-4 flex-wrap">
                 <span>Legenda:</span>
                 <span className="inline-flex items-center gap-1"><span className="text-green-400"><CheckIcon /></span> Presente</span>
-                <span className="inline-flex items-center gap-1"><span className="text-red-400"><XIcon /></span> Ausente</span>
+                <span className="inline-flex items-center gap-1"><span className="text-red-400"><XIcon /></span> Ausente (marcado pelo admin)</span>
                 <span className="inline-flex items-center gap-1"><span className="text-gray-500 font-bold">-</span> Não marcado</span>
             </p>
         </div>
