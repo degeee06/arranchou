@@ -13,8 +13,6 @@ interface EmployeeWeekViewProps {
 }
 
 const EmployeeWeekView: React.FC<EmployeeWeekViewProps> = ({ profile, attendance, attendanceRecords, setAttendanceRecords, currentWeekId }) => {
-    const jsTodayIndex = new Date().getDay();
-    const todayIndex = jsTodayIndex === 0 ? 6 : jsTodayIndex - 1;
 
     const handleToggleAttendance = async (day: DayKey) => {
         const originalRecords = attendanceRecords;
@@ -53,23 +51,20 @@ const EmployeeWeekView: React.FC<EmployeeWeekViewProps> = ({ profile, attendance
     return (
         <div className="bg-gray-800 rounded-lg shadow p-4 sm:p-6 max-w-2xl mx-auto">
             <h2 className="text-2xl font-bold mb-1 text-white">Minha Presença na Semana</h2>
-            <p className="text-gray-400 mb-6">Marque os dias que você irá comparecer. Você só pode alterar dias futuros.</p>
+            <p className="text-gray-400 mb-6">Marque os dias que você irá comparecer. As alterações são salvas automaticamente.</p>
             <div className="overflow-x-auto">
                 <table className="min-w-full">
                     <tbody className="divide-y divide-gray-700">
                         {DAYS_OF_WEEK.map((day) => {
-                            const dayIndex = DAYS_OF_WEEK.indexOf(day);
-                            const isPast = dayIndex < todayIndex;
                             const status = attendance[profile.id]?.[day];
 
                             return (
-                                <tr key={day} className={`hover:bg-gray-700/50 ${isPast ? 'opacity-60' : ''}`}>
+                                <tr key={day} className="hover:bg-gray-700/50">
                                     <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-white">{day}</td>
                                     <td className="px-4 py-3 whitespace-nowrap text-center">
                                         <button
                                             onClick={() => handleToggleAttendance(day)}
-                                            disabled={isPast}
-                                            className={`p-2 rounded-full transition-all duration-200 transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-70 ${
+                                            className={`p-2 rounded-full transition-all duration-200 transform active:scale-95 ${
                                                 status === true
                                                 ? 'bg-green-900 text-green-300 hover:bg-green-800'
                                                 : status === false

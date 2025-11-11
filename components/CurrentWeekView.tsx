@@ -23,24 +23,18 @@ const AdminPersonalAttendance: React.FC<{
   attendance: Attendance;
   onToggle: (day: DayKey) => void;
 }> = ({ profile, attendance, onToggle }) => {
-    const jsTodayIndex = new Date().getDay();
-    const todayIndex = jsTodayIndex === 0 ? 6 : jsTodayIndex - 1;
-
     return (
         <section className="bg-gray-800 rounded-lg shadow p-4 sm:p-6 mb-6">
             <h2 className="text-xl font-bold mb-4 text-gray-200">Minha Presença</h2>
             <div className="flex flex-wrap justify-center gap-3">
                 {DAYS_OF_WEEK.map((day) => {
-                    const dayIndex = DAYS_OF_WEEK.indexOf(day);
-                    const isPast = dayIndex < todayIndex;
                     const status = attendance[profile.id]?.[day];
                     return (
-                        <div key={day} className={`text-center p-3 rounded-md w-24 ${isPast ? 'bg-gray-700/50 opacity-60' : 'bg-gray-700'}`}>
+                        <div key={day} className="text-center p-3 rounded-md w-24 bg-gray-700">
                             <p className="font-semibold text-sm text-white">{day}</p>
                              <button
                                 onClick={() => onToggle(day)}
-                                disabled={isPast}
-                                className={`mt-3 p-2 w-full flex justify-center rounded-full transition-all duration-200 transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-70 ${
+                                className={`mt-3 p-2 w-full flex justify-center rounded-full transition-all duration-200 transform active:scale-95 ${
                                     status === true
                                     ? 'bg-green-900 text-green-300 hover:bg-green-800'
                                     : status === false
