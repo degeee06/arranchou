@@ -72,14 +72,8 @@ const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance,
   const [isSearchVisible, setIsSearchVisible] = useState(false);
 
   const handleToggleAttendance = async (personId: string, day: DayKey) => {
-    const dayIndex = DAYS_OF_WEEK.indexOf(day);
-    if (dayIndex < todayIndex && personId !== adminProfile.id) { // Admin can change their own past days if needed, but not others
-        alert("Não é possível alterar o status de dias que já passaram para outros usuários.");
-        return;
-    }
-    
-    const currentStatus = attendance[personId]?.[day];
     const originalRecords = attendanceRecords; // Save for rollback
+    const currentStatus = attendance[personId]?.[day];
 
     // Cycle: undefined -> true -> false -> undefined (by deleting)
     if (currentStatus === undefined) {

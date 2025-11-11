@@ -17,14 +17,8 @@ const EmployeeWeekView: React.FC<EmployeeWeekViewProps> = ({ profile, attendance
     const todayIndex = jsTodayIndex === 0 ? 6 : jsTodayIndex - 1;
 
     const handleToggleAttendance = async (day: DayKey) => {
-        const dayIndex = DAYS_OF_WEEK.indexOf(day);
-        if (dayIndex < todayIndex) {
-            alert("Não é possível alterar o status de dias que já passaram.");
-            return;
-        }
-
-        const currentStatus = attendance[profile.id]?.[day];
         const originalRecords = attendanceRecords;
+        const currentStatus = attendance[profile.id]?.[day];
 
         // New Cycle for employees: (undefined | false) -> true -> undefined
         if (currentStatus === true) {
