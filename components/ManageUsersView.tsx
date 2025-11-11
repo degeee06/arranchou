@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Profile } from '../types';
 import { supabase } from '../supabase';
 import Modal from './Modal';
-import { DotsVerticalIcon, UserPlusIcon } from './icons';
+import { DotsVerticalIcon, UserPlusIcon, SearchIcon } from './icons';
 
 interface ManageUsersViewProps {
   profiles: Profile[];
@@ -28,6 +28,9 @@ const ManageUsersView: React.FC<ManageUsersViewProps> = ({ profiles, setProfiles
   const [newEmployeeId, setNewEmployeeId] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [isCreatingUser, setIsCreatingUser] = useState(false);
+  
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchVisible, setIsSearchVisible] = useState(false);
 
 
   useEffect(() => {
@@ -132,26 +135,51 @@ const handleCreateUser = async (e: React.FormEvent) => {
 };
 
   
-  const sortedProfiles = [...profiles].sort((a, b) => {
-    const roleOrder = { super_admin: 0, admin: 1, employee: 2 };
-    if (roleOrder[a.role] !== roleOrder[b.role]) {
-      return roleOrder[a.role] - roleOrder[b.role];
-    }
-    return a.full_name.localeCompare(b.full_name);
+  const sortedProfiles = [...profiles]
+    .filter(person => {
+        const query = searchQuery.toLowerCase();
+        return person.full_name.toLowerCase().includes(query) || (person.employee_id && person.employee_id.toLowerCase().includes(query));
+    })
+    .sort((a, b) => {
+        const roleOrder = { super_admin: 0, admin: 1, employee: 2 };
+        if (roleOrder[a.role] !== roleOrder[b.role]) {
+          return roleOrder[a.role] - roleOrder[b.role];
+        }
+        return a.full_name.localeCompare(b.full_name);
   });
 
   return (
     <>
       <div className="bg-gray-800 rounded-lg shadow p-4 sm:p-6">
-        <div className="flex justify-between items-center mb-4">
+        <div className="flex flex-wrap justify-between items-center gap-2 mb-4">
             <h2 className="text-xl font-bold text-gray-200">Gerenciar Usuários</h2>
-            <button
-                onClick={() => { setIsCreateModalOpen(true); setError(null); }}
-                className="flex items-center gap-2 bg-brand-primary hover:bg-brand-secondary text-white font-bold py-2 px-4 rounded-md transition duration-300"
-            >
-                <UserPlusIcon />
-                <span className="hidden sm:inline">Novo Usuário</span>
-            </button>
+            <div className="flex items-center gap-2">
+                {isSearchVisible && (
+                    <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="Pesquisar..."
+                        className="w-40 sm:w-48 px-3 py-1.5 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-primary focus:border-brand-primary text-sm transition-all duration-300"
+                        autoFocus
+                        onBlur={() => { if(!searchQuery) setIsSearchVisible(false); }}
+                    />
+                )}
+                <button
+                    onClick={() => setIsSearchVisible(prev => !prev)}
+                    className="p-2 rounded-full text-gray-400 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-brand-primary"
+                    aria-label="Pesquisar usuário"
+                >
+                    <SearchIcon />
+                </button>
+                <button
+                    onClick={() => { setIsCreateModalOpen(true); setError(null); }}
+                    className="flex items-center gap-2 bg-brand-primary hover:bg-brand-secondary text-white font-bold py-2 px-4 rounded-md transition duration-300"
+                >
+                    <UserPlusIcon />
+                    <span className="hidden sm:inline">Novo Usuário</span>
+                </button>
+            </div>
         </div>
 
         {error && <p className="mb-4 text-center text-red-400 text-sm bg-red-900/50 p-3 rounded-md">{error}</p>}

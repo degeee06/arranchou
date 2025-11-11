@@ -9,6 +9,9 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// FIX: Add declaration for Deno to fix "Cannot find name 'Deno'" error during static type analysis.
+declare const Deno: any;
+
 // FIX: Cast Deno to any to access the 'env' property. This is a workaround
 // for type-checking environments where Deno's global types are not properly loaded.
 const DenoEnv = (Deno as any).env;

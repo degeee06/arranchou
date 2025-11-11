@@ -6,6 +6,9 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// FIX: Add declaration for Deno to fix "Cannot find name 'Deno'" error during static type analysis.
+declare const Deno: any;
+
 const DenoEnv = (Deno as any).env;
 
 serve(async (req: Request) => {
