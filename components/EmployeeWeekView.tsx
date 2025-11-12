@@ -62,23 +62,22 @@ const EmployeeWeekView: React.FC<EmployeeWeekViewProps> = ({ profile, attendance
                             const status = attendance[profile.id]?.[day];
                             
                             const now = new Date();
-                            const dayDate = weekDates[index];
+                            const dayDateUTC = weekDates[index]; // This date is at 00:00 UTC for the given day
 
-                            // Normalize dates to compare only the day, ignoring time
-                            const todayNormalized = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-                            const dayDateNormalized = new Date(dayDate.getFullYear(), dayDate.getMonth(), dayDate.getDate());
+                            // CORRECTED LOGIC: Create the cutoff time (noon) in the user's local timezone
+                            // using the components from the UTC date. This avoids timezone mismatches.
+                            const cutoffTime = new Date(
+                                dayDateUTC.getUTCFullYear(),
+                                dayDateUTC.getUTCMonth(),
+                                dayDateUTC.getUTCDate(),
+                                12, 0, 0 // 12:00:00 local time
+                            );
 
-                            const isPastDay = dayDateNormalized < todayNormalized;
-                            const isToday = dayDateNormalized.getTime() === todayNormalized.getTime();
-                            const isAfterMidday = now.getHours() >= 12;
-
-                            const isDisabled = isPastDay || (isToday && isAfterMidday);
+                            const isDisabled = now.getTime() >= cutoffTime.getTime();
 
                             let buttonTitle = `Marcar presença para ${day}`;
-                            if (isPastDay) {
-                                buttonTitle = "Não é possível alterar a presença para dias passados.";
-                            } else if (isToday && isAfterMidday) {
-                                buttonTitle = "O prazo para alterar a presença hoje encerrou ao meio-dia.";
+                            if (isDisabled) {
+                                buttonTitle = "O prazo para alterar a presença neste dia já encerrou (meio-dia).";
                             }
 
                             return (
