@@ -18,23 +18,31 @@ function App() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isInitializing, setIsInitializing] = useState(true); // FIX: New state for initial app bootstrap
   const [currentWeekId] = useState<string>(getWeekId(new Date()));
   const [view, setView] = useState<'current' | 'history' | 'manage_users' | 'settings'>('current');
-  const [companyName, setCompanyName] = useState<string>('Arranchou'); // Novo estado
+  const [companyName, setCompanyName] = useState<string>('Arranchou');
 
   // Fetch public company name on initial load
   useEffect(() => {
     const fetchCompanyName = async () => {
-      const { data, error } = await supabase
-        .from('company_settings')
-        .select('setting_value')
-        .eq('setting_key', 'company_name')
-        .single();
-      
-      if (error) {
-        console.warn('Could not fetch company name setting, using default:', error.message);
-      } else if (data && data.setting_value) {
-        setCompanyName(data.setting_value);
+      try {
+        const { data, error } = await supabase
+          .from('company_settings')
+          .select('setting_value')
+          .eq('setting_key', 'company_name')
+          .single();
+        
+        if (error) {
+          console.warn('Could not fetch company name setting, using default:', error.message);
+        } else if (data && data.setting_value) {
+          setCompanyName(data.setting_value);
+        }
+      } catch (e) {
+        console.error("Error fetching company name", e);
+      } finally {
+        // FIX: Signal that the initial configuration fetch is complete
+        setIsInitializing(false);
       }
     };
     fetchCompanyName();
@@ -132,6 +140,9 @@ const fetchData = useCallback(async (currentSession: Session) => {
 
   // Auth listener
   useEffect(() => {
+    // We wait for the company name to be loaded before checking the session
+    if (isInitializing) return;
+
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       if (session) {
@@ -154,7 +165,7 @@ const fetchData = useCallback(async (currentSession: Session) => {
     });
 
     return () => subscription.unsubscribe();
-  }, [fetchData]);
+  }, [fetchData, isInitializing]);
 
   // Realtime listener for profile changes (for admin)
   useEffect(() => {
@@ -266,7 +277,8 @@ const fetchData = useCallback(async (currentSession: Session) => {
     }, {});
   }, [attendanceRecords, currentWeekId]);
 
-  if (loading) {
+  // FIX: Use the new isInitializing state for the main loading screen
+  if (isInitializing || loading) {
     return (
       <div className="min-h-screen bg-gray-900 flex justify-center items-center">
         <div className="animate-spin rounded-full h-32 w-32 border-t-2 border-b-2 border-brand-primary"></div>
