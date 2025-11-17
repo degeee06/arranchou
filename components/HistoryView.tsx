@@ -3,7 +3,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { HistoryEntry, Profile, AttendanceRecord } from '../types';
 import HistoryTable from './HistoryTable';
-import { PDFIcon } from './icons';
+import { PDFIcon, DotsVerticalIcon, TrashIcon } from './icons';
 import { DAYS_OF_WEEK } from '../constants';
 import { getDatesForWeekId, getReadableWeekRange, getWeekId, getPaginatedPastWeeksIds } from '../utils';
 import { Capacitor } from '@capacitor/core';
@@ -11,19 +11,25 @@ import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 import PaginationControls from './PaginationControls';
 import { supabase } from '../supabase';
+import Modal from './Modal';
 
 interface HistoryViewProps {
   allProfiles: Profile[];
+  currentUserProfile: Profile;
 }
 
 const WEEKS_PER_PAGE = 5;
 const TOTAL_HISTORY_WEEKS = 52; // Look back up to one year
 
-const HistoryView: React.FC<HistoryViewProps> = ({ allProfiles }) => {
+const HistoryView: React.FC<HistoryViewProps> = ({ allProfiles, currentUserProfile }) => {
   const [historyAttendances, setHistoryAttendances] = useState<AttendanceRecord[]>([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(true);
   const [loadingWeek, setLoadingWeek] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<HistoryEntry | null>(null);
+  const [isDeleting, setIsDeleting] = useState<string | null>(null);
+  const isSuperAdmin = currentUserProfile.role === 'super_admin';
 
   // Fetch paginated history data from Supabase whenever the page changes
   useEffect(() => {
@@ -55,6 +61,16 @@ const HistoryView: React.FC<HistoryViewProps> = ({ allProfiles }) => {
     fetchPagedHistory();
   }, [currentPage]);
 
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (openMenuId && !(event.target as HTMLElement).closest('.actions-menu-container')) {
+        setOpenMenuId(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [openMenuId]);
+
 
   const historyData: HistoryEntry[] = useMemo(() => {
     // This logic now processes only the chunk of data fetched for the current page
@@ -85,6 +101,28 @@ const HistoryView: React.FC<HistoryViewProps> = ({ allProfiles }) => {
 
   // Pagination is now based on a fixed total number of weeks, not the fetched data length
   const totalPages = Math.ceil(TOTAL_HISTORY_WEEKS / WEEKS_PER_PAGE);
+
+  const handleDeleteWeek = async () => {
+    if (!deleteConfirm) return;
+    const weekIdToDelete = deleteConfirm.weekId;
+    setIsDeleting(weekIdToDelete);
+
+    const { error } = await supabase
+      .from('attendances')
+      .delete()
+      .eq('week_id', weekIdToDelete);
+
+    if (error) {
+      console.error('Failed to delete week records:', error);
+      alert(`Falha ao remover registros: ${error.message}`);
+    } else {
+      setHistoryAttendances(prev => prev.filter(rec => rec.week_id !== weekIdToDelete));
+    }
+    
+    setIsDeleting(null);
+    setDeleteConfirm(null);
+  };
+
 
 const generatePdf = async (weekData: HistoryEntry) => {
   setLoadingWeek(weekData.weekId);
@@ -260,30 +298,67 @@ const generatePdf = async (weekData: HistoryEntry) => {
                   <span className="text-sm font-normal text-brand-primary">(Atual)</span>
                 )}
               </span>
-              <button
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  if (!isLoadingPdf) generatePdf(entry);
-                }}
-                disabled={isLoadingPdf}
-                className={`flex items-center gap-2 font-bold py-1 px-3 rounded-md text-sm transition duration-300 ${
-                  isLoadingPdf
-                    ? 'bg-gray-600 cursor-not-allowed text-gray-300'
-                    : 'bg-brand-primary hover:bg-brand-secondary text-white'
-                }`}
-              >
-                {isLoadingPdf ? (
-                  <>
-                    <span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></span>
-                    <span>Gerando...</span>
-                  </>
-                ) : (
-                  <>
-                    <PDFIcon /> Baixar PDF
-                  </>
+               <div className="flex items-center gap-2">
+                <button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (!isLoadingPdf) generatePdf(entry);
+                  }}
+                  disabled={isLoadingPdf}
+                  className={`flex items-center gap-2 font-bold py-1 px-3 rounded-md text-sm transition duration-300 ${
+                    isLoadingPdf
+                      ? 'bg-gray-600 cursor-not-allowed text-gray-300'
+                      : 'bg-brand-primary hover:bg-brand-secondary text-white'
+                  }`}
+                >
+                  {isLoadingPdf ? (
+                    <>
+                      <span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></span>
+                      <span>Gerando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <PDFIcon /> Baixar PDF
+                    </>
+                  )}
+                </button>
+
+                 {isSuperAdmin && (
+                  <div className="relative inline-block text-left actions-menu-container">
+                    <button
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setOpenMenuId(openMenuId === entry.weekId ? null : entry.weekId);
+                      }}
+                      className="p-2 rounded-full text-gray-400 hover:bg-gray-600 focus:outline-none"
+                      aria-label="Opções da semana"
+                      >
+                      <DotsVerticalIcon />
+                    </button>
+                    {openMenuId === entry.weekId && (
+                      <div className="origin-top-right absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-gray-700 ring-1 ring-black ring-opacity-5 z-10">
+                        <div className="py-1" role="menu">
+                          <button
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setDeleteConfirm(entry);
+                              setOpenMenuId(null);
+                            }}
+                            className="w-full text-left flex items-center gap-2 px-4 py-2 text-sm text-red-400 hover:bg-gray-600"
+                            role="menuitem"
+                          >
+                            <TrashIcon />
+                            Remover Registros
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 )}
-              </button>
+              </div>
             </summary>
             <div className="border-t border-gray-700 p-4">
               <HistoryTable weekData={entry} />
@@ -296,6 +371,29 @@ const generatePdf = async (weekData: HistoryEntry) => {
         totalPages={totalPages}
         onPageChange={setCurrentPage}
       />
+
+       <Modal
+          isOpen={!!deleteConfirm}
+          onClose={() => setDeleteConfirm(null)}
+          title="Confirmar Remoção"
+        >
+          <div className="mt-4">
+            <p className="text-sm text-gray-400">
+              Tem certeza que deseja remover permanentemente todos os registros de presença da semana de <strong>{deleteConfirm ? getReadableWeekRange(deleteConfirm.weekId) : ''}</strong>?
+            </p>
+            <p className="text-sm text-red-400 mt-2 font-semibold">
+              Esta ação é irreversível e apagará os dados de todos os funcionários para este período.
+            </p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button onClick={() => setDeleteConfirm(null)} type="button" className="px-4 py-2 text-sm font-medium text-gray-200 bg-gray-600 border border-gray-500 rounded-md shadow-sm hover:bg-gray-700">
+                Cancelar
+              </button>
+              <button onClick={handleDeleteWeek} type="button" className="px-4 py-2 text-sm font-medium text-white bg-status-absent border border-transparent rounded-md shadow-sm hover:bg-red-700 disabled:bg-gray-500" disabled={isDeleting === deleteConfirm?.weekId}>
+                {isDeleting === deleteConfirm?.weekId ? 'Removendo...' : 'Sim, Remover'}
+              </button>
+            </div>
+          </div>
+        </Modal>
     </div>
   );
 };

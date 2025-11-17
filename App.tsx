@@ -337,7 +337,7 @@ const fetchData = useCallback(async (currentSession: Session) => {
                 adminProfile={profile}
               />
             )}
-            {view === 'history' && <HistoryView allProfiles={profiles} />}
+            {view === 'history' && <HistoryView allProfiles={profiles} currentUserProfile={profile} />}
             {view === 'manage_users' && (
               <ManageUsersView
                 profiles={profiles}
