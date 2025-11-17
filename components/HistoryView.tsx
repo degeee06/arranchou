@@ -1,26 +1,64 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { HistoryEntry, Profile, AttendanceRecord } from '../types';
 import HistoryTable from './HistoryTable';
 import { PDFIcon } from './icons';
 import { DAYS_OF_WEEK } from '../constants';
-import { getDatesForWeekId, getReadableWeekRange } from '../utils';
+import { getDatesForWeekId, getReadableWeekRange, getWeekId, getPaginatedPastWeeksIds } from '../utils';
 import { Capacitor } from '@capacitor/core';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
-import { getWeekId } from '../App';
+import PaginationControls from './PaginationControls';
+import { supabase } from '../supabase';
 
 interface HistoryViewProps {
   allProfiles: Profile[];
-  allAttendances: AttendanceRecord[];
 }
 
-const HistoryView: React.FC<HistoryViewProps> = ({ allProfiles, allAttendances }) => {
+const WEEKS_PER_PAGE = 5;
+const TOTAL_HISTORY_WEEKS = 52; // Look back up to one year
+
+const HistoryView: React.FC<HistoryViewProps> = ({ allProfiles }) => {
+  const [historyAttendances, setHistoryAttendances] = useState<AttendanceRecord[]>([]);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(true);
   const [loadingWeek, setLoadingWeek] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+
+  // Fetch paginated history data from Supabase whenever the page changes
+  useEffect(() => {
+    const fetchPagedHistory = async () => {
+        setIsHistoryLoading(true);
+        const weeksToFetch = getPaginatedPastWeeksIds(currentPage, WEEKS_PER_PAGE);
+
+        if (weeksToFetch.length === 0) {
+            setHistoryAttendances([]);
+            setIsHistoryLoading(false);
+            return;
+        }
+
+        const { data, error } = await supabase
+            .from('attendances')
+            .select('*')
+            .in('week_id', weeksToFetch);
+        
+        if (error) {
+            console.error('Failed to fetch paged history:', error);
+            alert('Falha ao carregar o histórico.');
+            setHistoryAttendances([]);
+        } else {
+            setHistoryAttendances(data || []);
+        }
+        setIsHistoryLoading(false);
+    };
+
+    fetchPagedHistory();
+  }, [currentPage]);
+
 
   const historyData: HistoryEntry[] = useMemo(() => {
-    const groupedByWeek: { [weekId: string]: AttendanceRecord[] } = allAttendances.reduce((acc, record) => {
+    // This logic now processes only the chunk of data fetched for the current page
+    const groupedByWeek: { [weekId: string]: AttendanceRecord[] } = historyAttendances.reduce((acc, record) => {
         (acc[record.week_id] = acc[record.week_id] || []).push(record);
         return acc;
     }, {});
@@ -43,7 +81,10 @@ const HistoryView: React.FC<HistoryViewProps> = ({ allProfiles, allAttendances }
         attendance: attendanceForWeek
       };
     }).sort((a, b) => b.weekId.localeCompare(a.weekId)); // Sort descending
-  }, [allProfiles, allAttendances]);
+  }, [allProfiles, historyAttendances]);
+
+  // Pagination is now based on a fixed total number of weeks, not the fetched data length
+  const totalPages = Math.ceil(TOTAL_HISTORY_WEEKS / WEEKS_PER_PAGE);
 
 const generatePdf = async (weekData: HistoryEntry) => {
   setLoadingWeek(weekData.weekId);
@@ -180,12 +221,20 @@ const generatePdf = async (weekData: HistoryEntry) => {
   }
 };
 
+  if (isHistoryLoading) {
+    return (
+        <div className="flex justify-center items-center py-10">
+            <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-brand-primary"></div>
+        </div>
+    );
+  }
+
   if (historyData.length === 0) {
     return (
       <div className="text-center py-10 px-4 bg-gray-800 rounded-lg shadow">
-        <p className="text-gray-400">Nenhum histórico para exibir ainda.</p>
+        <p className="text-gray-400">Nenhum histórico para exibir nesta página.</p>
         <p className="text-gray-400 mt-2">
-          Os registros de presença aparecerão aqui após serem salvos.
+          Tente a página anterior ou verifique novamente mais tarde.
         </p>
       </div>
     );
@@ -201,7 +250,7 @@ const generatePdf = async (weekData: HistoryEntry) => {
           <details
             key={entry.weekId}
             className="bg-gray-800 rounded-lg shadow overflow-hidden"
-            open={entry.weekId === currentWeekId}
+            open={entry.weekId === currentWeekId && currentPage === 1}
           >
             <summary className="cursor-pointer p-4 font-semibold text-lg text-gray-200 flex justify-between items-center hover:bg-gray-700">
               <span className="flex flex-col sm:flex-row sm:items-center sm:gap-2">
@@ -242,6 +291,11 @@ const generatePdf = async (weekData: HistoryEntry) => {
           </details>
         );
       })}
+      <PaginationControls 
+        currentPage={currentPage}
+        totalPages={totalPages}
+        onPageChange={setCurrentPage}
+      />
     </div>
   );
 };

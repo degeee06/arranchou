@@ -8,27 +8,9 @@ import CurrentWeekView from './components/CurrentWeekView';
 import HistoryView from './components/HistoryView';
 import EmployeeWeekView from './components/EmployeeWeekView';
 import ManageUsersView from './components/ManageUsersView';
-import { CalendarIcon, HistoryIcon, UsersIcon } from './components/icons';
-
-// Function to get ISO week number (e.g., 2024-W42)
-export const getWeekId = (date: Date): string => {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  const weekNo = Math.ceil((((d.valueOf() - yearStart.valueOf()) / 86400000) + 1) / 7);
-  return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
-};
-
-function getPastWeeksIds(numWeeks: number): string[] {
-    const ids = [];
-    const today = new Date();
-    for(let i=0; i < numWeeks; i++){
-        const pastDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() - (i * 7));
-        ids.push(getWeekId(pastDate));
-    }
-    return ids;
-}
-
+import SettingsView from './components/SettingsView'; // Importar a nova view
+import { CalendarIcon, HistoryIcon, UsersIcon, SettingsIcon } from './components/icons';
+import { getWeekId, getPastWeeksIds } from './utils';
 
 function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -37,7 +19,8 @@ function App() {
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentWeekId] = useState<string>(getWeekId(new Date()));
-  const [view, setView] = useState<'current' | 'history' | 'manage_users'>('current');
+  const [view, setView] = useState<'current' | 'history' | 'manage_users' | 'settings'>('current');
+  const [companyName, setCompanyName] = useState<string>('Arranchou'); // Novo estado
 
 const fetchData = useCallback(async (currentSession: Session) => {
   try {
@@ -65,6 +48,20 @@ const fetchData = useCallback(async (currentSession: Session) => {
 
     setProfile(userProfileData);
 
+    // Fetch company settings for all logged-in users
+    const { data: companyNameData, error: companyNameError } = await supabase
+        .from('company_settings')
+        .select('setting_value')
+        .eq('setting_key', 'company_name')
+        .single();
+    
+    if (companyNameError) {
+        console.warn('Could not fetch company name setting:', companyNameError.message);
+    } else {
+        setCompanyName(companyNameData?.setting_value || 'Arranchou');
+    }
+
+
     // 2. Se for admin, tenta buscar dados adicionais
     if (userProfileData.role === 'admin' || userProfileData.role === 'super_admin') {
       try {
@@ -81,18 +78,18 @@ const fetchData = useCallback(async (currentSession: Session) => {
           setProfiles(allProfiles || []);
         }
 
-        // Busca attendances sem filtro (admin pode ver tudo se política funcionar)
-        const recentWeeks = getPastWeeksIds(8);
-        const { data: recentAttendances, error: attendancesError } = await supabase
-          .from('attendances')
-          .select('*')
-          .in('week_id', recentWeeks);
+        // 🔥 OPTIMIZATION: Only fetch the current week's data on initial load for admins.
+        // History is now loaded on-demand in the HistoryView.
+        const { data: currentWeekAttendances, error: attendancesError } = await supabase
+            .from('attendances')
+            .select('*')
+            .eq('week_id', currentWeekId);
 
         if (attendancesError) {
-          console.warn('Admin cannot fetch all attendances:', attendancesError);
+          console.warn('Admin cannot fetch current week attendances:', attendancesError);
           setAttendanceRecords([]);
         } else {
-          setAttendanceRecords(recentAttendances || []);
+          setAttendanceRecords(currentWeekAttendances || []);
         }
 
       } catch (adminError) {
@@ -127,7 +124,7 @@ const fetchData = useCallback(async (currentSession: Session) => {
   } finally {
     setLoading(false);
   }
-}, []);
+}, [currentWeekId]);
 
   // Auth listener
   useEffect(() => {
@@ -197,6 +194,14 @@ const fetchData = useCallback(async (currentSession: Session) => {
       return;
     }
 
+    // 🔥 OPTIMIZATION: Disable mass realtime updates for admins to prevent performance issues.
+    // An admin managing 2000+ users would be flooded with events.
+    // The data will be fresh on each load/navigation instead.
+    // Employees will still get their own updates via RLS.
+    if (profile?.role === 'admin' || profile?.role === 'super_admin') {
+      return;
+    }
+
     const channel = supabase
       .channel('attendances-changes')
       .on<AttendanceRecord>(
@@ -226,7 +231,7 @@ const fetchData = useCallback(async (currentSession: Session) => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [session, loading]); // Depend on 'loading' to trigger subscription after fetch is done.
+  }, [session, loading, profile]); // Depend on 'profile' to correctly apply the role-based rule.
 
 
   const handleLogout = async () => {
@@ -270,10 +275,11 @@ const fetchData = useCallback(async (currentSession: Session) => {
   }
   
   const isAdmin = profile.role === 'admin' || profile.role === 'super_admin';
+  const isSuperAdmin = profile.role === 'super_admin';
 
   return (
     <div className="container mx-auto px-2 sm:px-4 py-4 sm:py-8 max-w-7xl">
-      <Header session={session} profile={profile} onLogout={handleLogout} />
+      <Header session={session} profile={profile} onLogout={handleLogout} companyName={companyName} />
       <main>
         {isAdmin ? (
           <>
@@ -296,6 +302,14 @@ const fetchData = useCallback(async (currentSession: Session) => {
               >
                  <span className="flex items-center gap-2"><UsersIcon /> <span className="hidden sm:inline">Gerenciar Usuários</span></span>
               </button>
+              {isSuperAdmin && (
+                 <button
+                    onClick={() => setView('settings')}
+                    className={`px-2 sm:px-4 py-2 font-semibold transition-colors ${view === 'settings' ? 'text-brand-primary border-b-2 border-brand-primary' : 'text-gray-400'}`}
+                  >
+                    <span className="flex items-center gap-2"><SettingsIcon /> <span className="hidden sm:inline">Configurações</span></span>
+                </button>
+              )}
             </nav>
             {view === 'current' && (
               <CurrentWeekView
@@ -308,12 +322,18 @@ const fetchData = useCallback(async (currentSession: Session) => {
                 adminProfile={profile}
               />
             )}
-            {view === 'history' && <HistoryView allProfiles={profiles} allAttendances={attendanceRecords} />}
+            {view === 'history' && <HistoryView allProfiles={profiles} />}
             {view === 'manage_users' && (
               <ManageUsersView
                 profiles={profiles}
                 setProfiles={setProfiles}
                 currentUserProfile={profile}
+              />
+            )}
+            {view === 'settings' && isSuperAdmin && (
+              <SettingsView 
+                initialCompanyName={companyName}
+                setCompanyName={setCompanyName}
               />
             )}
           </>

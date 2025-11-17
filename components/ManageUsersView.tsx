@@ -3,6 +3,7 @@ import { Profile } from '../types';
 import { supabase } from '../supabase';
 import Modal from './Modal';
 import { DotsVerticalIcon, UserPlusIcon, SearchIcon } from './icons';
+import PaginationControls from './PaginationControls';
 
 interface ManageUsersViewProps {
   profiles: Profile[];
@@ -15,6 +16,8 @@ const ROLES_MAP: Record<Profile['role'], string> = {
   admin: 'Admin',
   employee: 'Funcionário',
 };
+
+const ITEMS_PER_PAGE = 50;
 
 const ManageUsersView: React.FC<ManageUsersViewProps> = ({ profiles, setProfiles, currentUserProfile }) => {
   const [loading, setLoading] = useState<Record<string, boolean>>({});
@@ -31,6 +34,7 @@ const ManageUsersView: React.FC<ManageUsersViewProps> = ({ profiles, setProfiles
   
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchVisible, setIsSearchVisible] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
 
 
   useEffect(() => {
@@ -44,6 +48,11 @@ const ManageUsersView: React.FC<ManageUsersViewProps> = ({ profiles, setProfiles
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [openMenuId]);
+  
+  // Reset page to 1 when search query changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery]);
 
   const handleRoleChange = async (person: Profile) => {
     const originalRole = person.role;
@@ -148,6 +157,14 @@ const handleCreateUser = async (e: React.FormEvent) => {
         return a.full_name.localeCompare(b.full_name);
   });
 
+  // Pagination Logic
+  const totalPages = Math.ceil(sortedProfiles.length / ITEMS_PER_PAGE);
+  const paginatedProfiles = sortedProfiles.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE
+  );
+
+
   return (
     <>
       <div className="bg-gray-800 rounded-lg shadow p-4 sm:p-6">
@@ -194,7 +211,7 @@ const handleCreateUser = async (e: React.FormEvent) => {
               </tr>
             </thead>
             <tbody className="bg-gray-800 divide-y divide-gray-700">
-              {sortedProfiles.map(person => {
+              {paginatedProfiles.map(person => {
                 const isLoading = loading[person.id];
                 const isCurrentUser = person.id === currentUserProfile.id;
 
@@ -276,6 +293,11 @@ const handleCreateUser = async (e: React.FormEvent) => {
             </tbody>
           </table>
         </div>
+        <PaginationControls
+          currentPage={currentPage}
+          totalPages={totalPages}
+          onPageChange={setCurrentPage}
+        />
       </div>
 
       {/* Create User Modal */}
