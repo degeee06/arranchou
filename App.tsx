@@ -22,6 +22,24 @@ function App() {
   const [view, setView] = useState<'current' | 'history' | 'manage_users' | 'settings'>('current');
   const [companyName, setCompanyName] = useState<string>('Arranchou'); // Novo estado
 
+  // Fetch public company name on initial load
+  useEffect(() => {
+    const fetchCompanyName = async () => {
+      const { data, error } = await supabase
+        .from('company_settings')
+        .select('setting_value')
+        .eq('setting_key', 'company_name')
+        .single();
+      
+      if (error) {
+        console.warn('Could not fetch company name setting, using default:', error.message);
+      } else if (data && data.setting_value) {
+        setCompanyName(data.setting_value);
+      }
+    };
+    fetchCompanyName();
+  }, []);
+
 const fetchData = useCallback(async (currentSession: Session) => {
   try {
     setLoading(true);
@@ -47,20 +65,6 @@ const fetchData = useCallback(async (currentSession: Session) => {
     }
 
     setProfile(userProfileData);
-
-    // Fetch company settings for all logged-in users
-    const { data: companyNameData, error: companyNameError } = await supabase
-        .from('company_settings')
-        .select('setting_value')
-        .eq('setting_key', 'company_name')
-        .single();
-    
-    if (companyNameError) {
-        console.warn('Could not fetch company name setting:', companyNameError.message);
-    } else {
-        setCompanyName(companyNameData?.setting_value || 'Arranchou');
-    }
-
 
     // 2. Se for admin, tenta buscar dados adicionais
     if (userProfileData.role === 'admin' || userProfileData.role === 'super_admin') {
@@ -271,7 +275,7 @@ const fetchData = useCallback(async (currentSession: Session) => {
   }
 
   if (!session || !profile) {
-    return <AuthView />;
+    return <AuthView companyName={companyName} />;
   }
   
   const isAdmin = profile.role === 'admin' || profile.role === 'super_admin';
