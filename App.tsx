@@ -17,12 +17,28 @@ function App() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
-  const [loading, setLoading] = useState(false); // For subsequent data fetches
-  const [isBootstrapping, setIsBootstrapping] = useState(true); // For initial app load
+  const [loading, setLoading] = useState(true);
   const [currentWeekId] = useState<string>(getWeekId(new Date()));
   const [view, setView] = useState<'current' | 'history' | 'manage_users' | 'settings'>('current');
-  const [companyName, setCompanyName] = useState<string>('Arranchou');
+  const [companyName, setCompanyName] = useState<string>('Arranchou'); // Novo estado
 
+  // Fetch public company name on initial load
+  useEffect(() => {
+    const fetchCompanyName = async () => {
+      const { data, error } = await supabase
+        .from('company_settings')
+        .select('setting_value')
+        .eq('setting_key', 'company_name')
+        .single();
+      
+      if (error) {
+        console.warn('Could not fetch company name setting, using default:', error.message);
+      } else if (data && data.setting_value) {
+        setCompanyName(data.setting_value);
+      }
+    };
+    fetchCompanyName();
+  }, []);
 
 const fetchData = useCallback(async (currentSession: Session) => {
   try {
@@ -114,45 +130,17 @@ const fetchData = useCallback(async (currentSession: Session) => {
   }
 }, [currentWeekId]);
 
-
-  // Effect for INITIAL APP LOAD
+  // Auth listener
   useEffect(() => {
-    const initializeApp = async () => {
-      // Fetch company name and session in parallel to be efficient
-      const [companyNameResponse, sessionResponse] = await Promise.all([
-        supabase
-          .from('company_settings')
-          .select('setting_value')
-          .eq('setting_key', 'company_name')
-          .single(),
-        supabase.auth.getSession(),
-      ]);
-
-      // Process company name
-      if (companyNameResponse.data?.setting_value) {
-        setCompanyName(companyNameResponse.data.setting_value);
-      } else if (companyNameResponse.error) {
-        console.warn('Could not fetch company name setting:', companyNameResponse.error.message);
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      if (session) {
+        fetchData(session);
+      } else {
+        setLoading(false);
       }
+    });
 
-      // Process session
-      const currentSession = sessionResponse.data.session;
-      setSession(currentSession);
-
-      if (currentSession) {
-        // If there's a session, we need to fetch all associated user data
-        await fetchData(currentSession);
-      }
-
-      // After all initial data is fetched (or attempted), stop the bootstrap loading state
-      setIsBootstrapping(false);
-    };
-
-    initializeApp();
-  }, [fetchData]); // fetchData is stable due to useCallback
-
-  // Auth listener for SUBSEQUENT changes (login/logout after initial load)
-  useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       if (session) {
@@ -161,6 +149,7 @@ const fetchData = useCallback(async (currentSession: Session) => {
         setProfile(null);
         setProfiles([]);
         setAttendanceRecords([]);
+        setLoading(false);
       }
     });
 
@@ -205,7 +194,7 @@ const fetchData = useCallback(async (currentSession: Session) => {
   useEffect(() => {
     // FIX: Only subscribe after the initial load is complete and we have a session.
     // This prevents a race condition where realtime updates are overwritten by the initial fetch.
-    if (isBootstrapping || !session) {
+    if (loading || !session) {
       return;
     }
 
@@ -246,7 +235,7 @@ const fetchData = useCallback(async (currentSession: Session) => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [session, isBootstrapping, profile]); // Depend on 'profile' to correctly apply the role-based rule.
+  }, [session, loading, profile]); // Depend on 'profile' to correctly apply the role-based rule.
 
 
   const handleLogout = async () => {
@@ -277,7 +266,7 @@ const fetchData = useCallback(async (currentSession: Session) => {
     }, {});
   }, [attendanceRecords, currentWeekId]);
 
-  if (isBootstrapping) {
+  if (loading) {
     return (
       <div className="min-h-screen bg-gray-900 flex justify-center items-center">
         <div className="animate-spin rounded-full h-32 w-32 border-t-2 border-b-2 border-brand-primary"></div>
