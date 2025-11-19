@@ -149,8 +149,8 @@ const generatePdf = async (weekData: HistoryEntry) => {
         ...DAYS_OF_WEEK.map((day) => {
           const status = attendance[person.id]?.[day];
           if (status?.is_present === true) {
-              // Se validado, podemos marcar diferente no PDF ou manter como P
-              return 'P'; 
+              // V = Validado (Blue Double Check), P = Presente (Green Check)
+              return status.validated ? 'V' : 'P'; 
           }
           if (status?.is_present === false) return 'X';
           return '-';
@@ -184,7 +184,8 @@ const generatePdf = async (weekData: HistoryEntry) => {
         if ((data.section === 'body' || data.section === 'foot') && data.column.index > 0) {
           data.cell.styles.halign = 'center';
         }
-        if (data.section === 'body' && data.column.index > 0 && (data.cell.raw === 'P' || data.cell.raw === 'X')) {
+        // Esconde o texto para desenhar o ícone no lugar
+        if (data.section === 'body' && data.column.index > 0 && (data.cell.raw === 'P' || data.cell.raw === 'X' || data.cell.raw === 'V')) {
           data.cell.text = '';
         }
       },
@@ -197,11 +198,28 @@ const generatePdf = async (weekData: HistoryEntry) => {
           const lineWidth = 0.8;
 
           if (cell.raw === 'P') {
+            // Single Check (Green)
             doc.setLineWidth(lineWidth);
             doc.setDrawColor(46, 125, 50);
             doc.line(x - size * 0.8, y, x - size * 0.2, y + size * 0.6);
             doc.line(x - size * 0.2, y + size * 0.6, x + size, y - size * 0.8);
+          } else if (cell.raw === 'V') {
+            // Double Check (Blue)
+            doc.setLineWidth(lineWidth);
+            doc.setDrawColor(33, 150, 243); // Blue Color
+
+            // Check 1 (Offset Left)
+            const x1 = x - size * 0.25;
+            doc.line(x1 - size * 0.8, y, x1 - size * 0.2, y + size * 0.6);
+            doc.line(x1 - size * 0.2, y + size * 0.6, x1 + size, y - size * 0.8);
+            
+            // Check 2 (Offset Right)
+            const x2 = x + size * 0.25;
+            doc.line(x2 - size * 0.8, y, x2 - size * 0.2, y + size * 0.6);
+            doc.line(x2 - size * 0.2, y + size * 0.6, x2 + size, y - size * 0.8);
+
           } else if (cell.raw === 'X') {
+            // X Icon (Red)
             doc.setLineWidth(lineWidth);
             doc.setDrawColor(198, 40, 40);
             doc.line(x - size, y - size, x + size, y + size);
