@@ -159,16 +159,25 @@ const generatePdf = async (weekData: HistoryEntry) => {
       tableRows.push(rowData);
     });
 
-    const totalsRow = ['TOTAL'];
+    // Calculate Footer Rows
+    const validatedRow = ['Validados (Check-in)'];
+    const presentRow = ['Total Reservado'];
+    const absentRow = ['Ausentes'];
+
     DAYS_OF_WEEK.forEach((day) => {
+      const validatedCount = sortedPeople.filter((p) => attendance[p.id]?.[day]?.validated === true).length;
       const presentCount = sortedPeople.filter((p) => attendance[p.id]?.[day]?.is_present === true).length;
-      totalsRow.push(presentCount.toString());
+      const absentCount = sortedPeople.filter((p) => attendance[p.id]?.[day]?.is_present === false).length;
+
+      validatedRow.push(validatedCount.toString());
+      presentRow.push(presentCount.toString());
+      absentRow.push(absentCount.toString());
     });
 
     autoTable(doc, {
       head: [tableColumn],
       body: tableRows,
-      foot: [totalsRow],
+      foot: [validatedRow, presentRow, absentRow],
       startY: 25,
       theme: 'grid',
       headStyles: {
@@ -178,7 +187,7 @@ const generatePdf = async (weekData: HistoryEntry) => {
       footStyles: {
         fontStyle: 'bold',
         fillColor: [245, 245, 245],
-        textColor: 20,
+        textColor: 20, // Default text color, overriden in willDrawCell/didParseCell
       },
       willDrawCell: (data: any) => {
         if ((data.section === 'body' || data.section === 'foot') && data.column.index > 0) {
@@ -187,6 +196,18 @@ const generatePdf = async (weekData: HistoryEntry) => {
         // Esconde o texto para desenhar o ícone no lugar
         if (data.section === 'body' && data.column.index > 0 && (data.cell.raw === 'P' || data.cell.raw === 'X' || data.cell.raw === 'V')) {
           data.cell.text = '';
+        }
+      },
+      didParseCell: (data: any) => {
+        // Apply colors to footer rows to match web UI
+        if (data.section === 'foot') {
+            if (data.row.index === 0) { // Validated Row
+                data.cell.styles.textColor = [33, 150, 243]; // Blue
+            } else if (data.row.index === 1) { // Reserved Row
+                data.cell.styles.textColor = [46, 125, 50]; // Green
+            } else if (data.row.index === 2) { // Absent Row
+                data.cell.styles.textColor = [198, 40, 40]; // Red
+            }
         }
       },
       didDrawCell: (data: any) => {
