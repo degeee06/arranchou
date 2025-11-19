@@ -149,7 +149,7 @@ const generatePdf = async (weekData: HistoryEntry) => {
         ...DAYS_OF_WEEK.map((day) => {
           const status = attendance[person.id]?.[day];
           if (status?.is_present === true) {
-              // V = Validado (Blue Double Check), P = Presente (Green Check)
+              // V = Validado (Blue Check), P = Presente (Green Check)
               return status.validated ? 'V' : 'P'; 
           }
           if (status?.is_present === false) return 'X';
@@ -204,19 +204,13 @@ const generatePdf = async (weekData: HistoryEntry) => {
             doc.line(x - size * 0.8, y, x - size * 0.2, y + size * 0.6);
             doc.line(x - size * 0.2, y + size * 0.6, x + size, y - size * 0.8);
           } else if (cell.raw === 'V') {
-            // Double Check (Blue)
+            // Single Check (Blue) - Validated
             doc.setLineWidth(lineWidth);
             doc.setDrawColor(33, 150, 243); // Blue Color
 
-            // Check 1 (Offset Left)
-            const x1 = x - size * 0.25;
-            doc.line(x1 - size * 0.8, y, x1 - size * 0.2, y + size * 0.6);
-            doc.line(x1 - size * 0.2, y + size * 0.6, x1 + size, y - size * 0.8);
-            
-            // Check 2 (Offset Right)
-            const x2 = x + size * 0.25;
-            doc.line(x2 - size * 0.8, y, x2 - size * 0.2, y + size * 0.6);
-            doc.line(x2 - size * 0.2, y + size * 0.6, x2 + size, y - size * 0.8);
+            // Draw Single Check (same geometry as 'P', just different color)
+            doc.line(x - size * 0.8, y, x - size * 0.2, y + size * 0.6);
+            doc.line(x - size * 0.2, y + size * 0.6, x + size, y - size * 0.8);
 
           } else if (cell.raw === 'X') {
             // X Icon (Red)
