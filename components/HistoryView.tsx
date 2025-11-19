@@ -87,7 +87,10 @@ const HistoryView: React.FC<HistoryViewProps> = ({ allProfiles, currentUserProfi
 
       const attendanceForWeek = records.reduce((acc, record) => {
           if (!acc[record.user_id]) acc[record.user_id] = {};
-          acc[record.user_id][record.day] = record.is_present;
+          acc[record.user_id][record.day] = {
+              is_present: record.is_present,
+              validated: record.validated
+          };
           return acc;
       }, {});
 
@@ -145,8 +148,11 @@ const generatePdf = async (weekData: HistoryEntry) => {
         person.full_name,
         ...DAYS_OF_WEEK.map((day) => {
           const status = attendance[person.id]?.[day];
-          if (status === true) return 'P';
-          if (status === false) return 'X';
+          if (status?.is_present === true) {
+              // Se validado, podemos marcar diferente no PDF ou manter como P
+              return 'P'; 
+          }
+          if (status?.is_present === false) return 'X';
           return '-';
         }),
       ];
@@ -155,7 +161,7 @@ const generatePdf = async (weekData: HistoryEntry) => {
 
     const totalsRow = ['TOTAL'];
     DAYS_OF_WEEK.forEach((day) => {
-      const presentCount = sortedPeople.filter((p) => attendance[p.id]?.[day] === true).length;
+      const presentCount = sortedPeople.filter((p) => attendance[p.id]?.[day]?.is_present === true).length;
       totalsRow.push(presentCount.toString());
     });
 

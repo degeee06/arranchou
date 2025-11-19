@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { supabase } from '../supabase';
 import { Profile, DayKey, Attendance, AttendanceRecord } from '../types';
 import { DAYS_OF_WEEK } from '../constants';
-import { CheckIcon, XIcon } from './icons';
+import { CheckIcon, XIcon, DoubleCheckIcon } from './icons';
 import { getDatesForWeekId } from '../utils';
 
 interface EmployeeWeekViewProps {
@@ -20,9 +20,10 @@ const EmployeeWeekView: React.FC<EmployeeWeekViewProps> = ({ profile, attendance
     const handleToggleAttendance = async (day: DayKey) => {
         const originalRecords = attendanceRecords;
         const currentStatus = attendance[profile.id]?.[day];
+        const isPresent = currentStatus?.is_present;
 
         // New Cycle for employees: (undefined | false) -> true -> undefined
-        if (currentStatus === true) {
+        if (isPresent === true) {
             // Optimistic update: From present to not marked (delete)
             setAttendanceRecords(prev => prev.filter(r => !(r.user_id === profile.id && r.week_id === currentWeekId && r.day === day)));
             
@@ -35,11 +36,12 @@ const EmployeeWeekView: React.FC<EmployeeWeekViewProps> = ({ profile, attendance
             }
         } else {
             // Optimistic update: From not marked/absent to present (upsert)
-            setAttendanceRecords(prev => [...prev.filter(r => !(r.user_id === profile.id && r.week_id === currentWeekId && r.day === day)), { user_id: profile.id, week_id: currentWeekId, day, is_present: true }]);
+            // Default validated to false
+            setAttendanceRecords(prev => [...prev.filter(r => !(r.user_id === profile.id && r.week_id === currentWeekId && r.day === day)), { user_id: profile.id, week_id: currentWeekId, day, is_present: true, validated: false }]);
             
             // DB operation
             const { data, error } = await supabase.from('attendances').upsert(
-                { user_id: profile.id, week_id: currentWeekId, day, is_present: true },
+                { user_id: profile.id, week_id: currentWeekId, day, is_present: true, validated: false },
                 { onConflict: 'user_id,week_id,day' }
             ).select();
 
@@ -60,6 +62,8 @@ const EmployeeWeekView: React.FC<EmployeeWeekViewProps> = ({ profile, attendance
                     <tbody className="divide-y divide-gray-700">
                         {DAYS_OF_WEEK.map((day, index) => {
                             const status = attendance[profile.id]?.[day];
+                            const isPresent = status?.is_present;
+                            const isValidated = status?.validated;
                             
                             const now = new Date();
                             const dayDateUTC = weekDates[index]; // This date is at 00:00 UTC for the given day
@@ -93,15 +97,15 @@ const EmployeeWeekView: React.FC<EmployeeWeekViewProps> = ({ profile, attendance
                                                 ? 'opacity-50 cursor-not-allowed'
                                                 : 'active:scale-95'
                                             } ${
-                                                status === true
-                                                ? 'bg-green-900 text-green-300 hover:bg-green-800'
-                                                : status === false
+                                                isPresent === true
+                                                ? (isValidated ? 'bg-blue-900 text-blue-300 hover:bg-blue-800' : 'bg-green-900 text-green-300 hover:bg-green-800')
+                                                : isPresent === false
                                                 ? 'bg-red-900 text-red-300' // False status is read-only for employees now
                                                 : 'bg-gray-600 text-gray-400 hover:bg-gray-500'
                                             }`}
                                             aria-label={buttonTitle}
                                         >
-                                            {status === true ? <CheckIcon /> : status === false ? <XIcon /> : <span className="h-5 w-5 flex items-center justify-center font-bold">-</span>}
+                                            {isPresent === true ? (isValidated ? <DoubleCheckIcon /> : <CheckIcon />) : isPresent === false ? <XIcon /> : <span className="h-5 w-5 flex items-center justify-center font-bold">-</span>}
                                         </button>
                                     </td>
                                 </tr>
@@ -112,8 +116,9 @@ const EmployeeWeekView: React.FC<EmployeeWeekViewProps> = ({ profile, attendance
             </div>
              <p className="text-xs text-gray-500 mt-4 flex items-center gap-4 flex-wrap">
                 <span>Legenda:</span>
-                <span className="inline-flex items-center gap-1"><span className="text-green-400"><CheckIcon /></span> Presente</span>
-                <span className="inline-flex items-center gap-1"><span className="text-red-400"><XIcon /></span> Ausente (marcado pelo admin)</span>
+                <span className="inline-flex items-center gap-1"><span className="text-green-400"><CheckIcon /></span> Reservado</span>
+                <span className="inline-flex items-center gap-1"><span className="text-blue-400"><DoubleCheckIcon /></span> Validado</span>
+                <span className="inline-flex items-center gap-1"><span className="text-red-400"><XIcon /></span> Ausente</span>
                 <span className="inline-flex items-center gap-1"><span className="text-gray-500 font-bold">-</span> Não marcado</span>
             </p>
         </div>

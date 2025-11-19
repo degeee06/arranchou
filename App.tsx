@@ -272,7 +272,11 @@ const fetchData = useCallback(async (currentSession: Session) => {
       if (!acc[record.user_id]) {
         acc[record.user_id] = {};
       }
-      acc[record.user_id][record.day] = record.is_present;
+      // Updated to store object instead of just boolean
+      acc[record.user_id][record.day] = {
+        is_present: record.is_present,
+        validated: record.validated
+      };
       return acc;
     }, {});
   }, [attendanceRecords, currentWeekId]);

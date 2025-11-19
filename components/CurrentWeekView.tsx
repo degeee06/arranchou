@@ -4,7 +4,7 @@ import { DAYS_OF_WEEK } from '../constants';
 import DaySelector from './DaySelector';
 import AttendanceTable from './AttendanceTable';
 import Summary from './Summary';
-import { SearchIcon, CheckIcon, XIcon } from './icons';
+import { SearchIcon, CheckIcon, XIcon, DoubleCheckIcon } from './icons';
 import Modal from './Modal';
 import { supabase } from '../supabase';
 
@@ -35,15 +35,15 @@ const AdminPersonalAttendance: React.FC<{
                              <button
                                 onClick={() => onToggle(day)}
                                 className={`mt-3 p-2 w-full flex justify-center rounded-full transition-all duration-200 transform active:scale-95 ${
-                                    status === true
-                                    ? 'bg-green-900 text-green-300 hover:bg-green-800'
-                                    : status === false
-                                    ? 'bg-red-900 text-red-300 hover:bg-red-800'
-                                    : 'bg-gray-600 text-gray-400 hover:bg-gray-500'
+                                    status?.is_present === true
+                                        ? (status.validated ? 'bg-blue-900 text-blue-300 hover:bg-blue-800' : 'bg-green-900 text-green-300 hover:bg-green-800')
+                                        : status?.is_present === false
+                                        ? 'bg-red-900 text-red-300 hover:bg-red-800'
+                                        : 'bg-gray-600 text-gray-400 hover:bg-gray-500'
                                 }`}
                                 aria-label={`Marcar presença para ${day}`}
                             >
-                                {status === true ? <CheckIcon /> : status === false ? <XIcon /> : <span className="h-5 w-5 flex items-center justify-center font-bold">-</span>}
+                                {status?.is_present === true ? (status.validated ? <DoubleCheckIcon /> : <CheckIcon />) : status?.is_present === false ? <XIcon /> : <span className="h-5 w-5 flex items-center justify-center font-bold">-</span>}
                             </button>
                         </div>
                     );
@@ -69,51 +69,62 @@ const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance,
     const originalRecords = attendanceRecords; // Save for rollback
     const currentStatus = attendance[personId]?.[day];
 
-    // Cycle: undefined -> true -> false -> undefined (by deleting)
-    if (currentStatus === undefined) {
-        // Optimistic update
-        setAttendanceRecords(prev => [...prev.filter(r => !(r.user_id === personId && r.week_id === currentWeekId && r.day === day)), { user_id: personId, week_id: currentWeekId, day, is_present: true }]);
+    /* 
+        New Cycle Logic for Admin:
+        1. Undefined/Null -> Present (Green) [is_present: true, validated: false]
+        2. Present -> Validated (Blue) [is_present: true, validated: true]
+        3. Validated -> Absent (Red) [is_present: false, validated: false]
+        4. Absent -> Delete (Null)
+    */
+
+    if (!currentStatus) {
+        // STATE 1 -> 2: Mark as Reserved (Green)
+        setAttendanceRecords(prev => [...prev.filter(r => !(r.user_id === personId && r.week_id === currentWeekId && r.day === day)), { user_id: personId, week_id: currentWeekId, day, is_present: true, validated: false }]);
         
-        // DB operation
         const { data, error } = await supabase.from('attendances').upsert(
-            { user_id: personId, week_id: currentWeekId, day, is_present: true },
+            { user_id: personId, week_id: currentWeekId, day, is_present: true, validated: false },
             { onConflict: 'user_id,week_id,day' }
         ).select();
 
-        if (error || !data || data.length === 0) {
-            alert("Falha ao salvar. A alteração foi desfeita. Verifique sua conexão com a internet. Se o problema persistir, pode ser uma questão de permissão no banco de dados (RLS).");
-            console.error("Falha no upsert (presente):", error);
-            setAttendanceRecords(originalRecords); // Rollback
-        }
-    } else if (currentStatus === true) {
-        // Optimistic update
-        setAttendanceRecords(prev => prev.map(r => (r.user_id === personId && r.week_id === currentWeekId && r.day === day) ? { ...r, is_present: false } : r));
+        if (error) handleError(error, originalRecords);
 
-        // DB operation
+    } else if (currentStatus.is_present === true && !currentStatus.validated) {
+        // STATE 2 -> 3: Mark as Validated/Check-in (Blue)
+        setAttendanceRecords(prev => prev.map(r => (r.user_id === personId && r.week_id === currentWeekId && r.day === day) ? { ...r, is_present: true, validated: true } : r));
+
         const { data, error } = await supabase.from('attendances').upsert(
-            { user_id: personId, week_id: currentWeekId, day, is_present: false },
+            { user_id: personId, week_id: currentWeekId, day, is_present: true, validated: true },
             { onConflict: 'user_id,week_id,day' }
         ).select();
         
-        if (error || !data || data.length === 0) {
-            alert("Falha ao salvar. A alteração foi desfeita. Verifique sua conexão com a internet. Se o problema persistir, pode ser uma questão de permissão no banco de dados (RLS).");
-            console.error("Falha no upsert (ausente):", error);
-            setAttendanceRecords(originalRecords); // Rollback
-        }
+        if (error) handleError(error, originalRecords);
+
+    } else if (currentStatus.is_present === true && currentStatus.validated) {
+         // STATE 3 -> 4: Mark as Absent/No-Show (Red)
+         setAttendanceRecords(prev => prev.map(r => (r.user_id === personId && r.week_id === currentWeekId && r.day === day) ? { ...r, is_present: false, validated: false } : r));
+
+         const { data, error } = await supabase.from('attendances').upsert(
+             { user_id: personId, week_id: currentWeekId, day, is_present: false, validated: false },
+             { onConflict: 'user_id,week_id,day' }
+         ).select();
+         
+         if (error) handleError(error, originalRecords);
+
     } else {
-        // Optimistic update
+        // STATE 4 -> 1: Delete/Reset
         setAttendanceRecords(prev => prev.filter(r => !(r.user_id === personId && r.week_id === currentWeekId && r.day === day)));
 
-        // DB operation
         const { error } = await supabase.from('attendances').delete().match({ user_id: personId, week_id: currentWeekId, day });
         
-        if (error) {
-            alert("Falha ao salvar. A alteração foi desfeita. Verifique sua conexão com a internet. Se o problema persistir, pode ser uma questão de permissão no banco de dados (RLS).");
-            console.error("Falha ao deletar:", error);
-            setAttendanceRecords(originalRecords); // Rollback
-        }
+        if (error) handleError(error, originalRecords);
     }
   };
+
+  const handleError = (error: any, originalRecords: AttendanceRecord[]) => {
+      alert("Falha ao salvar. A alteração foi desfeita. Verifique sua conexão com a internet.");
+      console.error("Database Error:", error);
+      setAttendanceRecords(originalRecords);
+  }
 
   const handleOpenSubstituteModal = (person: Profile) => {
     setSubstituteModal({ isOpen: true, person });
@@ -142,15 +153,15 @@ const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance,
         const withoutSub = withoutOriginal.filter(r => !(r.user_id === substituteId && r.week_id === currentWeekId && r.day === currentDay));
         return [
             ...withoutSub,
-            { user_id: originalPerson.id, week_id: currentWeekId, day: currentDay, is_present: false },
-            { user_id: substituteId, week_id: currentWeekId, day: currentDay, is_present: true }
+            { user_id: originalPerson.id, week_id: currentWeekId, day: currentDay, is_present: false, validated: false },
+            { user_id: substituteId, week_id: currentWeekId, day: currentDay, is_present: true, validated: false }
         ];
     });
 
     // DB Operations in parallel
     const [originalResult, substituteResult] = await Promise.all([
-        supabase.from('attendances').upsert({ user_id: originalPerson.id, week_id: currentWeekId, day: currentDay, is_present: false }, { onConflict: 'user_id,week_id,day' }).select(),
-        supabase.from('attendances').upsert({ user_id: substituteId, week_id: currentWeekId, day: currentDay, is_present: true }, { onConflict: 'user_id,week_id,day' }).select()
+        supabase.from('attendances').upsert({ user_id: originalPerson.id, week_id: currentWeekId, day: currentDay, is_present: false, validated: false }, { onConflict: 'user_id,week_id,day' }).select(),
+        supabase.from('attendances').upsert({ user_id: substituteId, week_id: currentWeekId, day: currentDay, is_present: true, validated: false }, { onConflict: 'user_id,week_id,day' }).select()
     ]);
 
     // Check for errors

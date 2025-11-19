@@ -1,7 +1,7 @@
 import React from 'react';
 import { HistoryEntry } from '../types';
 import { DAYS_OF_WEEK } from '../constants';
-import { CheckIcon, XIcon } from './icons';
+import { CheckIcon, XIcon, DoubleCheckIcon } from './icons';
 import { getDatesForWeekId } from '../utils';
 
 interface HistoryTableProps {
@@ -18,8 +18,8 @@ const HistoryTable: React.FC<HistoryTableProps> = ({ weekData }) => {
 
   // Calculate totals per day
   const dailyTotals = DAYS_OF_WEEK.map(day => {
-    const present = people.filter(p => attendance[p.id]?.[day] === true).length;
-    const absent = people.filter(p => attendance[p.id]?.[day] === false).length;
+    const present = people.filter(p => attendance[p.id]?.[day]?.is_present === true).length;
+    const absent = people.filter(p => attendance[p.id]?.[day]?.is_present === false).length;
     return { present, absent };
   });
 
@@ -49,8 +49,8 @@ const HistoryTable: React.FC<HistoryTableProps> = ({ weekData }) => {
         </thead>
         <tbody className="bg-gray-800 divide-y divide-gray-700">
           {people.sort((a,b) => a.full_name.localeCompare(b.full_name)).map(person => {
-            const personTotalPresent = DAYS_OF_WEEK.filter(day => attendance[person.id]?.[day] === true).length;
-            const personTotalAbsent = DAYS_OF_WEEK.filter(day => attendance[person.id]?.[day] === false).length;
+            const personTotalPresent = DAYS_OF_WEEK.filter(day => attendance[person.id]?.[day]?.is_present === true).length;
+            const personTotalAbsent = DAYS_OF_WEEK.filter(day => attendance[person.id]?.[day]?.is_present === false).length;
             
             return (
               <tr key={person.id} className="hover:bg-gray-700">
@@ -61,9 +61,9 @@ const HistoryTable: React.FC<HistoryTableProps> = ({ weekData }) => {
                   const status = attendance[person.id]?.[day];
                   return (
                     <td key={day} className="px-2 sm:px-4 py-3 whitespace-nowrap text-center">
-                      {status === true && <span className="text-green-400 inline-flex"><CheckIcon /></span>}
-                      {status === false && <span className="text-red-400 inline-flex"><XIcon /></span>}
-                      {status === undefined && <span className="text-gray-500">-</span>}
+                      {status?.is_present === true && (status.validated ? <span className="text-blue-400 inline-flex"><DoubleCheckIcon /></span> : <span className="text-green-400 inline-flex"><CheckIcon /></span>)}
+                      {status?.is_present === false && <span className="text-red-400 inline-flex"><XIcon /></span>}
+                      {!status && <span className="text-gray-500">-</span>}
                     </td>
                   );
                 })}
