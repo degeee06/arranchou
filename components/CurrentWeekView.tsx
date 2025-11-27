@@ -4,7 +4,7 @@ import { DAYS_OF_WEEK } from '../constants';
 import DaySelector from './DaySelector';
 import AttendanceTable from './AttendanceTable';
 import Summary from './Summary';
-import { SearchIcon, CheckIcon, XIcon, DoubleCheckIcon } from './icons';
+import { SearchIcon, CheckIcon, XIcon, DoubleCheckIcon, FilterIcon } from './icons';
 import Modal from './Modal';
 import { supabase } from '../supabase';
 
@@ -64,6 +64,7 @@ const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance,
   
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchVisible, setIsSearchVisible] = useState(false);
+  const [showOnlyReserved, setShowOnlyReserved] = useState(false);
 
   const handleToggleAttendance = async (personId: string, day: DayKey) => {
     const originalRecords = attendanceRecords; // Save for rollback
@@ -176,7 +177,17 @@ const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance,
   
   const filteredPeople = profiles.filter(person => {
     const query = searchQuery.toLowerCase();
-    return person.full_name.toLowerCase().includes(query) || (person.employee_id && person.employee_id.toLowerCase().includes(query));
+    const matchesSearch = person.full_name.toLowerCase().includes(query) || (person.employee_id && person.employee_id.toLowerCase().includes(query));
+    
+    if (!matchesSearch) return false;
+
+    if (showOnlyReserved) {
+        // Checks for is_present === true (this includes both 'Reserved' and 'Validated' states)
+        const status = attendance[person.id]?.[currentDay];
+        return status?.is_present === true;
+    }
+
+    return true;
   });
 
   return (
@@ -200,13 +211,26 @@ const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance,
             <div className="flex flex-wrap justify-between items-center gap-2 mb-4">
               <h2 className="text-xl font-bold text-gray-200">Participantes do Dia</h2>
               <div className="flex items-center gap-2">
+                <button
+                    onClick={() => setShowOnlyReserved(prev => !prev)}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                        showOnlyReserved
+                        ? 'bg-brand-primary text-white'
+                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    }`}
+                    title={showOnlyReserved ? "Mostrar todos" : "Mostrar apenas reservados"}
+                >
+                    <FilterIcon />
+                    <span className="hidden sm:inline">Apenas Reservados</span>
+                </button>
+
                 {isSearchVisible && (
                     <input
                         type="text"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         placeholder="Pesquisar..."
-                        className="w-40 sm:w-48 px-3 py-1.5 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-primary focus:border-brand-primary text-sm transition-all duration-300"
+                        className="w-32 sm:w-48 px-3 py-1.5 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-primary focus:border-brand-primary text-sm transition-all duration-300"
                         autoFocus
                         onBlur={() => { if(!searchQuery) setIsSearchVisible(false); }}
                     />
