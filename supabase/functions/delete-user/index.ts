@@ -3,14 +3,14 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
+// FIX: Declare Deno to satisfy TypeScript type checker in non-Deno environments.
+declare const Deno: any;
+
 // Standard CORS headers for browser-based function invocation.
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
-
-// FIX: Add declaration for Deno to fix "Cannot find name 'Deno'" error during static type analysis.
-declare const Deno: any;
 
 // FIX: Cast Deno to any to access the 'env' property. This is a workaround
 // for type-checking environments where Deno's global types are not properly loaded.

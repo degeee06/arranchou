@@ -2,34 +2,6 @@ import { DayKey } from './types';
 import { DAYS_OF_WEEK } from './constants';
 
 /**
- * Retorna o ID da semana no formato ISO 8601 (ex: "2024-W42") para uma data.
- * @param date - O objeto Date.
- * @returns A string do ID da semana.
- */
-export const getWeekId = (date: Date): string => {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  const weekNo = Math.ceil((((d.valueOf() - yearStart.valueOf()) / 86400000) + 1) / 7);
-  return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
-};
-
-/**
- * Retorna uma lista de IDs de semanas passadas.
- * @param numWeeks - O número de semanas a serem retornadas a partir de hoje.
- * @returns Um array de strings com os IDs das semanas.
- */
-export function getPastWeeksIds(numWeeks: number): string[] {
-    const ids = [];
-    const today = new Date();
-    for(let i=0; i < numWeeks; i++){
-        const pastDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() - (i * 7));
-        ids.push(getWeekId(pastDate));
-    }
-    return ids;
-}
-
-/**
  * Retorna um array de objetos Date para cada dia de uma semana específica,
  * com base no formato de ID de semana ISO 8601 (ex: "2024-W42").
  * @param weekId - A string do ID da semana.
@@ -90,22 +62,3 @@ export const getReadableWeekRange = (weekId: string): string => {
 
   return `${formatDate(startDate)} a ${formatDate(endDate, true)}`;
 };
-
-/**
- * Retorna os IDs das semanas para uma página específica do histórico.
- * @param page - O número da página (começando em 1).
- * @param weeksPerPage - O número de semanas por página.
- * @returns Um array de strings com os IDs das semanas.
- */
-export const getPaginatedPastWeeksIds = (page: number, weeksPerPage: number): string[] => {
-    const ids = [];
-    const today = new Date();
-    const offset = (page - 1) * weeksPerPage;
-    const limit = offset + weeksPerPage;
-
-    for (let i = offset; i < limit; i++) {
-        const pastDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() - (i * 7));
-        ids.push(getWeekId(pastDate));
-    }
-    return ids;
-}

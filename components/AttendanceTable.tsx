@@ -1,6 +1,6 @@
 import React from 'react';
 import { Profile, Attendance, DayKey } from '../types';
-import { CheckIcon, XIcon, UserPlusIcon, DoubleCheckIcon } from './icons';
+import { CheckIcon, XIcon, UserPlusIcon } from './icons';
 
 interface AttendanceTableProps {
   people: Profile[];
@@ -45,9 +45,6 @@ const AttendanceTable: React.FC<AttendanceTableProps> = ({ people, attendance, c
         <tbody className="bg-gray-800 divide-y divide-gray-700">
           {peopleForCurrentDay.map(person => {
             const status = attendance[person.id]?.[currentDay];
-            const isPresent = status?.is_present;
-            const isValidated = status?.validated;
-
             return (
                 <tr key={person.id} className="hover:bg-gray-700">
                 <td className="px-2 sm:px-6 py-4 whitespace-nowrap text-sm font-medium text-white">
@@ -57,15 +54,15 @@ const AttendanceTable: React.FC<AttendanceTableProps> = ({ people, attendance, c
                     <button
                     onClick={() => onToggleAttendance(person.id, currentDay)}
                     className={`p-2 rounded-full transition-all duration-200 transform hover:scale-110 active:scale-95 ${
-                        isPresent === true
-                        ? (isValidated ? 'bg-blue-900 hover:bg-blue-800 text-blue-300' : 'bg-green-900 hover:bg-green-800 text-green-300')
-                        : isPresent === false
+                        status === true
+                        ? 'bg-green-900 hover:bg-green-800 text-green-300'
+                        : status === false
                         ? 'bg-red-900 hover:bg-red-800 text-red-300'
                         : 'bg-gray-600 text-gray-400 hover:bg-gray-500'
                     }`}
                     aria-label={`Marcar presença para ${person.full_name}`}
                     >
-                    {isPresent === true ? (isValidated ? <DoubleCheckIcon /> : <CheckIcon />) : isPresent === false ? <XIcon /> : <span className="h-5 w-5 flex items-center justify-center font-bold">-</span>}
+                    {status === true ? <CheckIcon /> : status === false ? <XIcon /> : <span className="h-5 w-5 flex items-center justify-center font-bold">-</span>}
                     </button>
                 </td>
                 {isAdmin && (

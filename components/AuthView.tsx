@@ -1,11 +1,7 @@
 import React, { useState } from 'react';
 import { supabase } from '../supabase';
 
-interface AuthViewProps {
-  companyName: string;
-}
-
-const AuthView: React.FC<AuthViewProps> = ({ companyName }) => {
+const AuthView: React.FC = () => {
     const [employeeId, setEmployeeId] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
@@ -40,7 +36,7 @@ const AuthView: React.FC<AuthViewProps> = ({ companyName }) => {
     return (
         <div className="min-h-screen bg-gray-900 flex flex-col justify-center items-center p-4">
             <div className="text-center mb-8">
-                <h1 className="text-4xl sm:text-5xl font-extrabold text-white tracking-tight">{companyName}</h1>
+                <h1 className="text-4xl sm:text-5xl font-extrabold text-white tracking-tight">Arranchou</h1>
                 <p className="text-lg text-gray-400 mt-2">Acesse para gerenciar o arranchamento.</p>
             </div>
             <div className="w-full max-w-sm mx-auto bg-gray-800 p-8 rounded-lg shadow-lg">

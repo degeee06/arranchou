@@ -1,7 +1,7 @@
 import React from 'react';
 import { HistoryEntry } from '../types';
 import { DAYS_OF_WEEK } from '../constants';
-import { CheckIcon, XIcon, DoubleCheckIcon } from './icons';
+import { CheckIcon, XIcon } from './icons';
 import { getDatesForWeekId } from '../utils';
 
 interface HistoryTableProps {
@@ -18,17 +18,13 @@ const HistoryTable: React.FC<HistoryTableProps> = ({ weekData }) => {
 
   // Calculate totals per day
   const dailyTotals = DAYS_OF_WEEK.map(day => {
-    // Present includes both Validated and just Reserved (is_present === true)
-    const present = people.filter(p => attendance[p.id]?.[day]?.is_present === true).length;
-    // Validated is a subset of Present
-    const validated = people.filter(p => attendance[p.id]?.[day]?.validated === true).length;
-    const absent = people.filter(p => attendance[p.id]?.[day]?.is_present === false).length;
-    return { present, validated, absent };
+    const present = people.filter(p => attendance[p.id]?.[day] === true).length;
+    const absent = people.filter(p => attendance[p.id]?.[day] === false).length;
+    return { present, absent };
   });
 
   // Calculate grand totals for the week
   const grandTotalPresent = dailyTotals.reduce((sum, day) => sum + day.present, 0);
-  const grandTotalValidated = dailyTotals.reduce((sum, day) => sum + day.validated, 0);
   const grandTotalAbsent = dailyTotals.reduce((sum, day) => sum + day.absent, 0);
 
 
@@ -53,8 +49,8 @@ const HistoryTable: React.FC<HistoryTableProps> = ({ weekData }) => {
         </thead>
         <tbody className="bg-gray-800 divide-y divide-gray-700">
           {people.sort((a,b) => a.full_name.localeCompare(b.full_name)).map(person => {
-            const personTotalPresent = DAYS_OF_WEEK.filter(day => attendance[person.id]?.[day]?.is_present === true).length;
-            const personTotalAbsent = DAYS_OF_WEEK.filter(day => attendance[person.id]?.[day]?.is_present === false).length;
+            const personTotalPresent = DAYS_OF_WEEK.filter(day => attendance[person.id]?.[day] === true).length;
+            const personTotalAbsent = DAYS_OF_WEEK.filter(day => attendance[person.id]?.[day] === false).length;
             
             return (
               <tr key={person.id} className="hover:bg-gray-700">
@@ -65,9 +61,9 @@ const HistoryTable: React.FC<HistoryTableProps> = ({ weekData }) => {
                   const status = attendance[person.id]?.[day];
                   return (
                     <td key={day} className="px-2 sm:px-4 py-3 whitespace-nowrap text-center">
-                      {status?.is_present === true && (status.validated ? <span className="text-blue-400 inline-flex"><DoubleCheckIcon /></span> : <span className="text-green-400 inline-flex"><CheckIcon /></span>)}
-                      {status?.is_present === false && <span className="text-red-400 inline-flex"><XIcon /></span>}
-                      {!status && <span className="text-gray-500">-</span>}
+                      {status === true && <span className="text-green-400 inline-flex"><CheckIcon /></span>}
+                      {status === false && <span className="text-red-400 inline-flex"><XIcon /></span>}
+                      {status === undefined && <span className="text-gray-500">-</span>}
                     </td>
                   );
                 })}
@@ -81,25 +77,9 @@ const HistoryTable: React.FC<HistoryTableProps> = ({ weekData }) => {
           })}
         </tbody>
         <tfoot className="border-t-2 border-gray-600">
-           {/* Linha de Validados (Check-in) - Nova */}
-           <tr className="bg-gray-700/50">
-            <td className="px-2 sm:px-4 py-3 text-left text-sm font-semibold text-blue-400">
-              Validados (Check-in)
-            </td>
-            {dailyTotals.map((total, index) => (
-                <td key={`validated-${index}`} className="px-2 sm:px-4 py-3 text-center text-sm font-bold text-blue-400">
-                    {total.validated}
-                </td>
-            ))}
-            <td className="px-2 sm:px-4 py-3 text-center text-sm font-bold text-blue-400">
-              {grandTotalValidated}
-            </td>
-          </tr>
-          
-          {/* Linha de Total Reservado (Presentes) */}
           <tr className="bg-gray-700/50">
             <td className="px-2 sm:px-4 py-3 text-left text-sm font-semibold text-green-400">
-              Total Reservado
+              Presentes
             </td>
             {dailyTotals.map((total, index) => (
                 <td key={`present-${index}`} className="px-2 sm:px-4 py-3 text-center text-sm font-bold text-green-400">
@@ -110,8 +90,6 @@ const HistoryTable: React.FC<HistoryTableProps> = ({ weekData }) => {
               {grandTotalPresent}
             </td>
           </tr>
-
-          {/* Linha de Ausentes */}
           <tr className="bg-gray-700/50">
             <td className="px-2 sm:px-4 py-3 text-left text-sm font-semibold text-red-400">
               Ausentes

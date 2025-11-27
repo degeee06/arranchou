@@ -1,60 +1,92 @@
 <!DOCTYPE html>
-<html lang="pt-BR" class="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="color-scheme" content="dark">
-    <title>Arranchou</title>
-
+    <title>Oubook</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-      tailwind.config = {
-        theme: {
-          extend: {
-            colors: {
-              'brand-primary': '#0D47A1',
-              'brand-secondary': '#1565C0',
-              'brand-light': '#1E88E5',
-              'brand-accent': '#42A5F5',
-              'status-confirmed': '#2E7D32',
-              'status-absent': '#C62828',
-            },
-          },
-        },
-        safelist: [
-          'bg-brand-primary',
-          'text-brand-primary',
-          'border-brand-primary',
-          'hover:bg-brand-secondary',
-          'hover:bg-brand-accent',
-          'focus:ring-brand-primary',
-          'focus:border-brand-primary'
-        ]
+    <style>
+      @import url('https://rsms.me/inter/inter.css');
+      html { font-family: 'Inter', sans-serif; }
+      body {
+        background-color: #000;
+        color: #F5F5F7;
       }
-    </script>
+      .glassmorphism {
+        background: rgba(28, 28, 30, 0.5);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+      }
+      .scrollbar-hide::-webkit-scrollbar {
+        display: none;
+      }
+      .scrollbar-hide {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+      }
+      
+      /* 🔥 FORÇAR DESIGN DO SEU BOTÃO SOBRE O HOTMART */
+      .hotmart-fb.hotmart__button-checkout {
+          background: linear-gradient(to right, #f59e0b, #ea580c) !important;
+          background-color: transparent !important;
+          border: none !important;
+          color: white !important;
+          font-weight: 700 !important;
+          font-size: 16px !important;
+          text-decoration: none !important;
+          box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05) !important;
+          border-radius: 12px !important;
+          padding: 12px 16px !important;
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          gap: 8px !important;
+          transition: all 0.3s ease !important;
+          cursor: pointer !important;
+      }
+
+      .hotmart-fb.hotmart__button-checkout:hover {
+          background: linear-gradient(to right, #d97706, #dc2626) !important;
+          transform: translateY(-2px) !important;
+          box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04) !important;
+      }
+
+      /* 🔥 REMOVER ESTILOS PADRÃO DO HOTMART */
+      .hotmart-fb.hotmart__button-checkout:before,
+      .hotmart-fb.hotmart__button-checkout:after {
+          display: none !important;
+      }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
   <script type="importmap">
 {
   "imports": {
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
     "react/": "https://aistudiocdn.com/react@^19.2.0/",
     "react": "https://aistudiocdn.com/react@^19.2.0",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
-    "jspdf": "https://aistudiocdn.com/jspdf@^3.0.3",
-    "jspdf-autotable": "https://aistudiocdn.com/jspdf-autotable@^5.0.2",
-    "@capacitor/core": "https://aistudiocdn.com/@capacitor/core@^7.4.4",
-    "@capacitor/filesystem": "https://aistudiocdn.com/@capacitor/filesystem@^7.1.4",
-    "@capacitor/share": "https://aistudiocdn.com/@capacitor/share@^7.0.2",
-    "@supabase/supabase-js": "https://aistudiocdn.com/@supabase/supabase-js@^2.45.0",
-    "path": "https://aistudiocdn.com/path@^0.12.7",
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.28.0",
     "vite": "https://aistudiocdn.com/vite@^7.1.12",
     "@vitejs/plugin-react": "https://aistudiocdn.com/@vitejs/plugin-react@^5.1.0",
+    "path": "https://aistudiocdn.com/path@^0.12.7",
+    "@capacitor/cli": "https://aistudiocdn.com/@capacitor/cli@^7.4.4",
+    "@capacitor/core": "https://aistudiocdn.com/@capacitor/core@^7.4.4",
+    "@capacitor/app": "https://aistudiocdn.com/@capacitor/app@^7.1.0",
+    "@capacitor/browser": "https://aistudiocdn.com/@capacitor/browser@^7.0.2",
+    "jspdf": "https://aistudiocdn.com/jspdf@^3.0.3",
+    "jspdf-autotable": "https://aistudiocdn.com/jspdf-autotable@^5.0.2",
+    "@capacitor/filesystem": "https://aistudiocdn.com/@capacitor/filesystem@^7.1.4",
+    "@capacitor/share": "https://aistudiocdn.com/@capacitor/share@^7.0.2",
     "url": "https://aistudiocdn.com/url@^0.11.4",
-    "deno.ns": "https://aistudiocdn.com/deno.ns@^0.8.0"
+    "@capacitor/push-notifications": "https://aistudiocdn.com/@capacitor/push-notifications@^7.0.3"
   }
 }
 </script>
 <link rel="stylesheet" href="/index.css">
 </head>
-  <body class="bg-gray-900 text-gray-100">
+  <body>
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
   </body>
