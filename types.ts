@@ -14,13 +14,20 @@ export interface AttendanceRecord {
   week_id: string;
   day: DayKey;
   is_present: boolean;
+  validated: boolean; // Novo campo
   created_at?: string;
 }
 
+export interface AttendanceStatus {
+  is_present: boolean;
+  validated: boolean;
+}
+
 // This will be the transformed structure for easier use in components
+// Mudança: Agora armazena um objeto com status, não apenas booleano
 export type Attendance = {
   [personId: string]: {
-    [day in DayKey]?: boolean;
+    [day in DayKey]?: AttendanceStatus;
   };
 };
 

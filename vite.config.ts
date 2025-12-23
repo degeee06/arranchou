@@ -11,10 +11,9 @@ export default defineConfig(({ mode }) => {
         host: '0.0.0.0',
       },
       plugins: [react()],
-      define: {},
       resolve: {
         alias: {
-          // FIX: Replaced `__dirname` which is not available in ESM with a compatible equivalent.
+          // FIX: Use import.meta.url to get directory path in an ES module context, as __dirname is not available.
           '@': fileURLToPath(new URL('.', import.meta.url)),
         }
       }

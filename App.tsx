@@ -8,36 +8,21 @@ import CurrentWeekView from './components/CurrentWeekView';
 import HistoryView from './components/HistoryView';
 import EmployeeWeekView from './components/EmployeeWeekView';
 import ManageUsersView from './components/ManageUsersView';
-import { CalendarIcon, HistoryIcon, UsersIcon } from './components/icons';
-
-// Function to get ISO week number (e.g., 2024-W42)
-export const getWeekId = (date: Date): string => {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  const weekNo = Math.ceil((((d.valueOf() - yearStart.valueOf()) / 86400000) + 1) / 7);
-  return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
-};
-
-function getPastWeeksIds(numWeeks: number): string[] {
-    const ids = [];
-    const today = new Date();
-    for(let i=0; i < numWeeks; i++){
-        const pastDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() - (i * 7));
-        ids.push(getWeekId(pastDate));
-    }
-    return ids;
-}
-
+import SettingsView from './components/SettingsView'; // Importar a nova view
+import { CalendarIcon, HistoryIcon, UsersIcon, SettingsIcon } from './components/icons';
+import { getWeekId, getPastWeeksIds } from './utils';
 
 function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false); // For subsequent data fetches
+  const [isBootstrapping, setIsBootstrapping] = useState(true); // For initial app load
   const [currentWeekId] = useState<string>(getWeekId(new Date()));
-  const [view, setView] = useState<'current' | 'history' | 'manage_users'>('current');
+  const [view, setView] = useState<'current' | 'history' | 'manage_users' | 'settings'>('current');
+  const [companyName, setCompanyName] = useState<string>('Arranchou');
+
 
 const fetchData = useCallback(async (currentSession: Session) => {
   try {
@@ -81,18 +66,18 @@ const fetchData = useCallback(async (currentSession: Session) => {
           setProfiles(allProfiles || []);
         }
 
-        // Busca attendances sem filtro (admin pode ver tudo se política funcionar)
-        const recentWeeks = getPastWeeksIds(8);
-        const { data: recentAttendances, error: attendancesError } = await supabase
-          .from('attendances')
-          .select('*')
-          .in('week_id', recentWeeks);
+        // 🔥 OPTIMIZATION: Only fetch the current week's data on initial load for admins.
+        // History is now loaded on-demand in the HistoryView.
+        const { data: currentWeekAttendances, error: attendancesError } = await supabase
+            .from('attendances')
+            .select('*')
+            .eq('week_id', currentWeekId);
 
         if (attendancesError) {
-          console.warn('Admin cannot fetch all attendances:', attendancesError);
+          console.warn('Admin cannot fetch current week attendances:', attendancesError);
           setAttendanceRecords([]);
         } else {
-          setAttendanceRecords(recentAttendances || []);
+          setAttendanceRecords(currentWeekAttendances || []);
         }
 
       } catch (adminError) {
@@ -127,19 +112,47 @@ const fetchData = useCallback(async (currentSession: Session) => {
   } finally {
     setLoading(false);
   }
-}, []);
+}, [currentWeekId]);
 
-  // Auth listener
+
+  // Effect for INITIAL APP LOAD
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      if (session) {
-        fetchData(session);
-      } else {
-        setLoading(false);
-      }
-    });
+    const initializeApp = async () => {
+      // Fetch company name and session in parallel to be efficient
+      const [companyNameResponse, sessionResponse] = await Promise.all([
+        supabase
+          .from('company_settings')
+          .select('setting_value')
+          .eq('setting_key', 'company_name')
+          .single(),
+        supabase.auth.getSession(),
+      ]);
 
+      // Process company name
+      if (companyNameResponse.data?.setting_value) {
+        setCompanyName(companyNameResponse.data.setting_value);
+      } else if (companyNameResponse.error) {
+        console.warn('Could not fetch company name setting:', companyNameResponse.error.message);
+      }
+
+      // Process session
+      const currentSession = sessionResponse.data.session;
+      setSession(currentSession);
+
+      if (currentSession) {
+        // If there's a session, we need to fetch all associated user data
+        await fetchData(currentSession);
+      }
+
+      // After all initial data is fetched (or attempted), stop the bootstrap loading state
+      setIsBootstrapping(false);
+    };
+
+    initializeApp();
+  }, [fetchData]); // fetchData is stable due to useCallback
+
+  // Auth listener for SUBSEQUENT changes (login/logout after initial load)
+  useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       if (session) {
@@ -148,7 +161,6 @@ const fetchData = useCallback(async (currentSession: Session) => {
         setProfile(null);
         setProfiles([]);
         setAttendanceRecords([]);
-        setLoading(false);
       }
     });
 
@@ -193,7 +205,15 @@ const fetchData = useCallback(async (currentSession: Session) => {
   useEffect(() => {
     // FIX: Only subscribe after the initial load is complete and we have a session.
     // This prevents a race condition where realtime updates are overwritten by the initial fetch.
-    if (loading || !session) {
+    if (isBootstrapping || !session) {
+      return;
+    }
+
+    // 🔥 OPTIMIZATION: Disable mass realtime updates for admins to prevent performance issues.
+    // An admin managing 2000+ users would be flooded with events.
+    // The data will be fresh on each load/navigation instead.
+    // Employees will still get their own updates via RLS.
+    if (profile?.role === 'admin' || profile?.role === 'super_admin') {
       return;
     }
 
@@ -226,7 +246,7 @@ const fetchData = useCallback(async (currentSession: Session) => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [session, loading]); // Depend on 'loading' to trigger subscription after fetch is done.
+  }, [session, isBootstrapping, profile]); // Depend on 'profile' to correctly apply the role-based rule.
 
 
   const handleLogout = async () => {
@@ -246,16 +266,22 @@ const fetchData = useCallback(async (currentSession: Session) => {
   };
   
   const attendanceData: Attendance = useMemo(() => {
-    return attendanceRecords.reduce<Attendance>((acc, record) => {
+    return attendanceRecords
+      .filter(record => record.week_id === currentWeekId)
+      .reduce<Attendance>((acc, record) => {
       if (!acc[record.user_id]) {
         acc[record.user_id] = {};
       }
-      acc[record.user_id][record.day] = record.is_present;
+      // Updated to store object instead of just boolean
+      acc[record.user_id][record.day] = {
+        is_present: record.is_present,
+        validated: record.validated
+      };
       return acc;
     }, {});
-  }, [attendanceRecords]);
+  }, [attendanceRecords, currentWeekId]);
 
-  if (loading) {
+  if (isBootstrapping) {
     return (
       <div className="min-h-screen bg-gray-900 flex justify-center items-center">
         <div className="animate-spin rounded-full h-32 w-32 border-t-2 border-b-2 border-brand-primary"></div>
@@ -264,14 +290,15 @@ const fetchData = useCallback(async (currentSession: Session) => {
   }
 
   if (!session || !profile) {
-    return <AuthView />;
+    return <AuthView companyName={companyName} />;
   }
   
   const isAdmin = profile.role === 'admin' || profile.role === 'super_admin';
+  const isSuperAdmin = profile.role === 'super_admin';
 
   return (
     <div className="container mx-auto px-2 sm:px-4 py-4 sm:py-8 max-w-7xl">
-      <Header session={session} profile={profile} onLogout={handleLogout} />
+      <Header session={session} profile={profile} onLogout={handleLogout} companyName={companyName} />
       <main>
         {isAdmin ? (
           <>
@@ -294,6 +321,14 @@ const fetchData = useCallback(async (currentSession: Session) => {
               >
                  <span className="flex items-center gap-2"><UsersIcon /> <span className="hidden sm:inline">Gerenciar Usuários</span></span>
               </button>
+              {isSuperAdmin && (
+                 <button
+                    onClick={() => setView('settings')}
+                    className={`px-2 sm:px-4 py-2 font-semibold transition-colors ${view === 'settings' ? 'text-brand-primary border-b-2 border-brand-primary' : 'text-gray-400'}`}
+                  >
+                    <span className="flex items-center gap-2"><SettingsIcon /> <span className="hidden sm:inline">Configurações</span></span>
+                </button>
+              )}
             </nav>
             {view === 'current' && (
               <CurrentWeekView
@@ -306,12 +341,18 @@ const fetchData = useCallback(async (currentSession: Session) => {
                 adminProfile={profile}
               />
             )}
-            {view === 'history' && <HistoryView allProfiles={profiles} allAttendances={attendanceRecords} />}
+            {view === 'history' && <HistoryView allProfiles={profiles} currentUserProfile={profile} />}
             {view === 'manage_users' && (
               <ManageUsersView
                 profiles={profiles}
                 setProfiles={setProfiles}
                 currentUserProfile={profile}
+              />
+            )}
+            {view === 'settings' && isSuperAdmin && (
+              <SettingsView 
+                initialCompanyName={companyName}
+                setCompanyName={setCompanyName}
               />
             )}
           </>
