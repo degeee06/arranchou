@@ -103,7 +103,7 @@ const handleRemoveUser = async () => {
 const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUserProfile.company_id) {
-        setError("Erro crítico: Seu perfil de administrador não está vinculado a uma empresa. Não é possível criar novos usuários.");
+        setError("Erro crítico: Seu perfil de administrador não está vinculado a uma empresa.");
         return;
     }
     
@@ -125,9 +125,13 @@ const handleCreateUser = async (e: React.FormEvent) => {
         setNewFullName('');
         setNewEmployeeId('');
         setNewPassword('');
+        
+        setError("Usuário criado com sucesso!");
+        setTimeout(() => setError(null), 5000);
+        
     } catch (err: any) {
         console.error('Error creating user:', err);
-        setError(err.message || 'Falha ao criar usuário. O Nº do Crachá pode já existir.');
+        setError(err.message || 'Falha ao criar usuário.');
     } finally {
         setIsCreatingUser(false);
     }
@@ -156,7 +160,7 @@ const handleCreateUser = async (e: React.FormEvent) => {
     <>
       <div className="bg-gray-800 rounded-lg shadow p-4 sm:p-6">
         <div className="flex flex-wrap justify-between items-center gap-2 mb-4">
-            <h2 className="text-xl font-bold text-gray-200">Gerenciar Usuários</h2>
+            <h2 className="text-xl font-bold text-gray-200">Gerenciar Equipe</h2>
             <div className="flex items-center gap-2">
                 {isSearchVisible && (
                     <input
@@ -166,16 +170,9 @@ const handleCreateUser = async (e: React.FormEvent) => {
                         placeholder="Pesquisar..."
                         className="w-40 sm:w-48 px-3 py-1.5 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-primary focus:border-brand-primary text-sm transition-all duration-300"
                         autoFocus
-                        onBlur={() => { if(!searchQuery) setIsSearchVisible(false); }}
                     />
                 )}
-                <button
-                    onClick={() => setIsSearchVisible(prev => !prev)}
-                    className="p-2 rounded-full text-gray-400 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-brand-primary"
-                    aria-label="Pesquisar usuário"
-                >
-                    <SearchIcon />
-                </button>
+                <button onClick={() => setIsSearchVisible(!isSearchVisible)} className="p-2 text-gray-400 hover:bg-gray-700 rounded-full"><SearchIcon /></button>
                 <button
                     onClick={() => { setIsCreateModalOpen(true); setError(null); }}
                     className="flex items-center gap-2 bg-brand-primary hover:bg-brand-secondary text-white font-bold py-2 px-4 rounded-md transition duration-300"
@@ -186,136 +183,48 @@ const handleCreateUser = async (e: React.FormEvent) => {
             </div>
         </div>
 
-        {error && <p className="mb-4 text-center text-red-400 text-sm bg-red-900/50 p-3 rounded-md">{error}</p>}
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-700">
-            <thead className="bg-gray-700">
-              <tr>
-                <th scope="col" className="px-2 sm:px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Nome</th>
-                <th scope="col" className="px-2 sm:px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Nº do Crachá</th>
-                <th scope="col" className="px-2 sm:px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Cargo</th>
-                <th scope="col" className="px-2 sm:px-6 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider">Ações</th>
-              </tr>
-            </thead>
-            <tbody className="bg-gray-800 divide-y divide-gray-700">
-              {paginatedProfiles.map(person => {
-                const isLoading = loading[person.id];
-                const isCurrentUser = person.id === currentUserProfile.id;
+        {error && (
+            <div className={`mb-4 text-center p-3 rounded-md text-sm ${error.includes('sucesso') ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'}`}>
+                {error}
+            </div>
+        )}
 
-                let canManageRole = false;
-                let canDelete = false;
-                if (currentUserProfile.role === 'super_admin' && !isCurrentUser) {
-                    canManageRole = person.role !== 'super_admin';
-                    canDelete = true;
-                } else if (currentUserProfile.role === 'admin' && person.role === 'employee') {
-                    canManageRole = true;
-                    canDelete = true;
-                }
-                
-                return (
-                  <tr key={person.id} className="hover:bg-gray-700">
-                    <td className="px-2 sm:px-6 py-4 whitespace-nowrap text-sm font-medium text-white">
-                        <span className={!person.company_id ? "text-yellow-400" : ""}>{person.full_name}</span>
-                        {!person.company_id && <span className="ml-2 text-[10px] bg-yellow-900/50 text-yellow-500 px-1 rounded">ÓRFÃO</span>}
-                    </td>
-                    <td className="px-2 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-300">{person.employee_id}</td>
-                    <td className="px-2 sm:px-6 py-4 whitespace-nowrap text-sm">
-                      <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                        person.role === 'super_admin' ? 'bg-red-200 text-red-800' :
-                        person.role === 'admin' ? 'bg-indigo-200 text-indigo-800' : 
-                        'bg-gray-600 text-gray-200'
-                      }`}>
-                        {ROLES_MAP[person.role]}
-                      </span>
-                    </td>
-                    <td className="px-2 sm:px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <div className="relative inline-block text-left actions-menu-container">
-                        <button
-                          onClick={() => setOpenMenuId(openMenuId === person.id ? null : person.id)}
-                          disabled={isLoading}
-                          className="p-2 rounded-full text-gray-400 hover:bg-gray-600 disabled:opacity-50 focus:outline-none"
-                        >
-                          {isLoading ? <span className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent block"></span> : <DotsVerticalIcon />}
-                        </button>
-                        {openMenuId === person.id && (
-                          <div className="origin-top-right absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-gray-700 ring-1 ring-black ring-opacity-5 z-10">
-                            <div className="py-1">
-                              <button
-                                onClick={() => { handleRoleChange(person); setOpenMenuId(null); }}
-                                disabled={!canManageRole}
-                                className="w-full text-left block px-4 py-2 text-sm text-gray-200 hover:bg-gray-600 disabled:opacity-50"
-                              >
-                                {person.role === 'admin' ? 'Rebaixar para Funcionário' : 'Promover para Admin'}
-                              </button>
-                              <button
-                                onClick={() => { setRemoveConfirm(person); setOpenMenuId(null); }}
-                                disabled={!canDelete}
-                                className="w-full text-left block px-4 py-2 text-sm text-red-400 hover:bg-gray-600 disabled:opacity-50"
-                              >
-                                Remover Usuário
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </td>
+        {paginatedProfiles.length === 0 ? (
+            <div className="text-center py-20 bg-gray-900/50 rounded-lg border border-dashed border-gray-700">
+                <p className="text-gray-400">Nenhum usuário visível para a empresa <strong>{currentUserProfile.company_id}</strong>.</p>
+                <p className="text-xs text-yellow-500 mt-2">Dica: Se você acabou de aplicar as regras de segurança, precisa <strong>sair da conta e entrar novamente</strong> para sincronizar sua visão.</p>
+            </div>
+        ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-700">
+                <thead className="bg-gray-700">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase">Nome</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase">Matrícula</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase">Cargo</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-300 uppercase">Ações</th>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        <PaginationControls currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />
+                </thead>
+                <tbody className="bg-gray-800 divide-y divide-gray-700">
+                  {paginatedProfiles.map(person => (
+                    <tr key={person.id} className="hover:bg-gray-700">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-white">{person.full_name}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">{person.employee_id}</td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`px-2 py-1 text-xs font-bold rounded-full ${person.role === 'admin' ? 'bg-indigo-900 text-indigo-200' : 'bg-gray-700 text-gray-300'}`}>
+                          {ROLES_MAP[person.role]}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
+                        <button onClick={() => setOpenMenuId(person.id)} className="text-gray-400 hover:text-white"><DotsVerticalIcon /></button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+        )}
       </div>
-
-      <Modal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} title="Criar Novo Usuário">
-        <form onSubmit={handleCreateUser} className="flex flex-col gap-4 mt-4">
-             <div className="mb-2">
-                <label className="block text-gray-300 text-sm font-bold mb-2">Nome Completo</label>
-                <input
-                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
-                    type="text"
-                    value={newFullName}
-                    onChange={(e) => setNewFullName(e.target.value)}
-                    required
-                />
-            </div>
-            <div className="mb-2">
-                <label className="block text-gray-300 text-sm font-bold mb-2">Nº do Crachá / Matrícula</label>
-                <input
-                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
-                    type="text"
-                    value={newEmployeeId}
-                    onChange={(e) => setNewEmployeeId(e.target.value)}
-                    required
-                />
-            </div>
-            <div className="mb-4">
-                <label className="block text-gray-300 text-sm font-bold mb-2">Senha Provisória</label>
-                <input
-                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
-                    type="password"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    required
-                />
-            </div>
-            {error && <p className="text-center text-red-400 text-sm">{error}</p>}
-            <button type="submit" className="w-full bg-brand-primary hover:bg-brand-secondary text-white font-bold py-2 px-4 rounded-md disabled:bg-gray-600" disabled={isCreatingUser}>
-                {isCreatingUser ? 'Criando...' : 'Criar Usuário'}
-            </button>
-        </form>
-      </Modal>
-
-      <Modal isOpen={!!removeConfirm} onClose={() => setRemoveConfirm(null)} title="Confirmar Remoção">
-        <div className="mt-4">
-            <p className="text-sm text-gray-400">Tem certeza que deseja remover permanentemente <strong>{removeConfirm?.full_name}</strong>?</p>
-            <div className="mt-6 flex justify-end gap-3">
-                <button onClick={() => setRemoveConfirm(null)} className="px-4 py-2 text-sm text-gray-200 bg-gray-600 rounded-md">Cancelar</button>
-                <button onClick={handleRemoveUser} className="px-4 py-2 text-sm text-white bg-status-absent rounded-md shadow-sm hover:bg-red-700">Sim, Remover</button>
-            </div>
-        </div>
-      </Modal>
     </>
   );
 };

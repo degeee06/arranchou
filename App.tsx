@@ -47,13 +47,11 @@ function App() {
 
       setProfile(userProfileData);
 
-      // Se o usuário não tem empresa vinculada, paramos aqui
       if (!userProfileData.company_id) {
           setLoading(false);
           return;
       }
 
-      // Buscar nome da empresa nas configurações
       const { data: settingsData } = await supabase
         .from('company_settings')
         .select('setting_value')
@@ -63,12 +61,13 @@ function App() {
 
       setCompanyName(settingsData?.setting_value || `Empresa: ${userProfileData.company_id}`);
 
-      // Buscar dados baseados no cargo
       if (userProfileData.role === 'admin' || userProfileData.role === 'super_admin') {
-        const { data: allProfiles } = await supabase
+        const { data: allProfiles, error: fetchProfilesError } = await supabase
           .from('profiles')
           .select('*')
           .order('full_name', { ascending: true });
+        
+        if (fetchProfilesError) throw fetchProfilesError;
         
         setProfiles(allProfiles || []);
 
@@ -154,7 +153,6 @@ function App() {
     return <AuthView companyName={companyName} />;
   }
 
-  // TELA DE ERRO CRÍTICO (Banco de Dados ou RLS)
   if (errorMessage) {
     return (
       <div className="min-h-screen bg-gray-900 flex flex-col justify-center items-center p-6 text-center">
@@ -185,7 +183,6 @@ function App() {
     );
   }
 
-  // TELA DE ERRO: Perfil sem empresa vinculada
   if (profile && !profile.company_id) {
       return (
           <div className="min-h-screen bg-gray-900 flex flex-col justify-center items-center p-6 text-center">
@@ -193,9 +190,6 @@ function App() {
                   <h1 className="text-2xl font-bold text-white mb-4">Conta Não Vinculada</h1>
                   <p className="text-gray-300 mb-6">
                       Olá, <strong>{profile.full_name}</strong>. Sua conta ainda não foi associada a nenhuma empresa.
-                  </p>
-                  <p className="text-sm text-gray-400 mb-8">
-                      Entre em contato com o suporte para vincular seu perfil.
                   </p>
                   <button 
                     onClick={handleLogout}
@@ -242,6 +236,15 @@ function App() {
             </nav>
             
             <div className="transition-all duration-300 animate-in fade-in slide-in-from-bottom-2">
+              {profiles.length === 0 && !loading && (
+                  <div className="bg-yellow-900/20 border border-yellow-600 p-6 rounded-xl text-center mb-8">
+                      <p className="text-yellow-500 font-bold mb-2">Sincronização Necessária</p>
+                      <p className="text-gray-400 text-sm">
+                          Sua lista de usuários está oculta por segurança. 
+                          <strong> Faça Logout e entre novamente</strong> para ativar suas permissões de administrador.
+                      </p>
+                  </div>
+              )}
               {view === 'current' && (
                 <CurrentWeekView
                   profiles={profiles}
