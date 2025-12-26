@@ -30,30 +30,32 @@ function App() {
       setLoading(true);
       setErrorMessage(null);
       
+      // 1. Busca perfil individual do usuário logado
+      // Usamos .maybeSingle() para evitar erro se o RLS bloquear
       const { data: userProfileData, error: profileError } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', currentSession.user.id)
-        .single();
+        .maybeSingle();
 
       if (profileError) {
-        console.error("Profile Fetch Error:", profileError);
-        throw new Error(`Erro ao carregar perfil: ${profileError.message}`);
+          console.error("Erro ao buscar perfil:", profileError);
+          throw new Error("Erro de permissão no banco (RLS). Tente sair e entrar novamente.");
       }
       
       if (!userProfileData) {
-        throw new Error('Perfil não encontrado no banco de dados.');
+        setProfile(null);
+        return; // Vai cair na tela de "Aguardando Vinculação"
       }
 
       setProfile(userProfileData);
 
-      // Se o usuário não tem empresa vinculada, paramos aqui
       if (!userProfileData.company_id) {
           setLoading(false);
           return;
       }
 
-      // Buscar nome da empresa nas configurações
+      // 2. Carrega Nome da Empresa
       const { data: settingsData } = await supabase
         .from('company_settings')
         .select('setting_value')
@@ -61,16 +63,24 @@ function App() {
         .eq('setting_key', 'company_name')
         .maybeSingle();
 
-      setCompanyName(settingsData?.setting_value || `Empresa: ${userProfileData.company_id}`);
+      setCompanyName(settingsData?.setting_value || `Unidade: ${userProfileData.company_id}`);
 
-      // Buscar dados baseados no cargo
-      if (userProfileData.role === 'admin' || userProfileData.role === 'super_admin') {
-        const { data: allProfiles } = await supabase
+      const isAdmin = userProfileData.role === 'admin' || userProfileData.role === 'super_admin';
+
+      // 3. Busca lista da equipe
+      if (isAdmin) {
+        const { data: allProfiles, error: fetchProfilesError } = await supabase
           .from('profiles')
           .select('*')
           .order('full_name', { ascending: true });
         
-        setProfiles(allProfiles || []);
+        if (fetchProfilesError) {
+            console.error("Erro RLS Perfis Equipe:", fetchProfilesError);
+            // Se falhar a lista total, mostramos apenas o próprio admin para não quebrar o app
+            setProfiles([userProfileData]); 
+        } else {
+            setProfiles(allProfiles || []);
+        }
 
         const { data: currentWeekAttendances } = await supabase
             .from('attendances')
@@ -91,8 +101,8 @@ function App() {
       }
 
     } catch (error: any) {
-      console.error('Error fetching data:', error);
-      setErrorMessage(error.message);
+      console.error('Fetch Error:', error);
+      setErrorMessage(error.message || 'Erro de conexão com o servidor.');
     } finally {
       setLoading(false);
     }
@@ -145,7 +155,7 @@ function App() {
   if (isBootstrapping) {
     return (
       <div className="min-h-screen bg-gray-900 flex justify-center items-center">
-        <div className="animate-spin rounded-full h-32 w-32 border-t-2 border-b-2 border-brand-primary shadow-xl"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-brand-primary"></div>
       </div>
     );
   }
@@ -154,61 +164,50 @@ function App() {
     return <AuthView companyName={companyName} />;
   }
 
-  // TELA DE ERRO CRÍTICO (Banco de Dados ou RLS)
   if (errorMessage) {
     return (
       <div className="min-h-screen bg-gray-900 flex flex-col justify-center items-center p-6 text-center">
-          <div className="bg-red-900/20 border border-red-500 p-8 rounded-2xl max-w-md shadow-2xl">
-              <h1 className="text-2xl font-bold text-white mb-4">Erro de Conexão</h1>
-              <p className="text-gray-300 mb-6">
-                Não conseguimos carregar seus dados. Isso pode ser um problema de rede ou permissão de acesso.
-              </p>
-              <div className="bg-black/50 p-3 rounded mb-6 text-xs text-red-400 font-mono text-left overflow-auto max-h-32">
-                {errorMessage}
-              </div>
+          <div className="bg-gray-800 border border-red-500/50 p-8 rounded-2xl max-w-md shadow-2xl">
+              <h1 className="text-xl font-bold text-white mb-2">Erro de Acesso</h1>
+              <p className="text-gray-400 mb-6 text-sm">{errorMessage}</p>
               <div className="flex flex-col gap-3">
-                <button 
-                  onClick={() => fetchData(session)}
-                  className="w-full bg-brand-primary hover:bg-brand-secondary text-white font-bold py-3 rounded-xl transition duration-300"
-                >
-                  Tentar Novamente
-                </button>
-                <button 
-                  onClick={handleLogout}
-                  className="w-full bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 rounded-xl transition duration-300"
-                >
-                  Sair
-                </button>
+                <button onClick={() => fetchData(session)} className="w-full bg-brand-primary text-white font-bold py-3 rounded-xl">Tentar Novamente</button>
+                <button onClick={handleLogout} className="w-full bg-gray-700 text-white font-bold py-2 rounded-xl">Sair da Conta</button>
               </div>
           </div>
       </div>
     );
   }
 
-  // TELA DE ERRO: Perfil sem empresa vinculada
-  if (profile && !profile.company_id) {
+  // Se logou mas o perfil não veio (RLS barrou ou usuário não existe no profiles)
+  if (!profile && !loading) {
       return (
           <div className="min-h-screen bg-gray-900 flex flex-col justify-center items-center p-6 text-center">
-              <div className="bg-red-900/20 border border-red-500 p-8 rounded-2xl max-w-md shadow-2xl">
-                  <h1 className="text-2xl font-bold text-white mb-4">Conta Não Vinculada</h1>
-                  <p className="text-gray-300 mb-6">
-                      Olá, <strong>{profile.full_name}</strong>. Sua conta ainda não foi associada a nenhuma empresa.
-                  </p>
-                  <p className="text-sm text-gray-400 mb-8">
-                      Entre em contato com o suporte para vincular seu perfil.
-                  </p>
-                  <button 
-                    onClick={handleLogout}
-                    className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl transition duration-300"
-                  >
-                    Sair e Tentar Novamente
-                  </button>
+              <div className="bg-gray-800 border border-brand-primary/50 p-8 rounded-2xl max-w-md shadow-xl">
+                  <h1 className="text-xl font-bold text-white mb-4">Sincronizando Acesso</h1>
+                  <p className="text-gray-400 mb-6 text-sm">Estamos finalizando a configuração do seu acesso. Se esta mensagem persistir, clique em Sair e entre novamente.</p>
+                  <div className="flex flex-col gap-3">
+                    <div className="animate-pulse bg-brand-primary/20 h-2 w-full rounded-full mb-4"></div>
+                    <button onClick={handleLogout} className="w-full bg-brand-primary text-white font-bold py-3 rounded-xl shadow-lg">Reiniciar Sessão (Sair)</button>
+                  </div>
               </div>
           </div>
       );
   }
 
-  if (!profile) return <AuthView companyName={companyName} />;
+  if (profile && !profile.company_id) {
+      return (
+          <div className="min-h-screen bg-gray-900 flex flex-col justify-center items-center p-6 text-center">
+              <div className="bg-gray-800 border border-yellow-500/50 p-8 rounded-2xl max-w-md shadow-xl">
+                  <h1 className="text-xl font-bold text-white mb-4">Aguardando Vinculação</h1>
+                  <p className="text-gray-400 mb-6 text-sm">Sua conta foi criada, mas não está vinculada a nenhuma unidade de serviço.</p>
+                  <button onClick={handleLogout} className="w-full bg-red-600 text-white font-bold py-3 rounded-xl">Sair</button>
+              </div>
+          </div>
+      );
+  }
+
+  if (!profile) return null;
   
   const isAdmin = profile.role === 'admin' || profile.role === 'super_admin';
   const isSuperAdmin = profile.role === 'super_admin';
@@ -242,6 +241,16 @@ function App() {
             </nav>
             
             <div className="transition-all duration-300 animate-in fade-in slide-in-from-bottom-2">
+              {profiles.length <= 1 && !loading && (
+                  <div className="bg-brand-primary/10 border border-brand-primary/40 p-6 rounded-xl text-center mb-8">
+                      <p className="text-brand-light font-bold mb-2">Sincronização Necessária</p>
+                      <p className="text-gray-400 text-sm max-w-sm mx-auto">
+                          As regras de segurança do banco de dados foram atualizadas. 
+                          Para visualizar sua equipe, você precisa <strong>Sair e Entrar novamente</strong> agora.
+                      </p>
+                      <button onClick={handleLogout} className="mt-4 bg-brand-primary px-8 py-2 rounded-lg font-bold shadow-lg hover:bg-brand-secondary transition-all">Sair e Entrar Agora</button>
+                  </div>
+              )}
               {view === 'current' && (
                 <CurrentWeekView
                   profiles={profiles}
