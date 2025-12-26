@@ -27,15 +27,23 @@ serve(async (req: Request) => {
       DenoEnv.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
     
-    // PEGAR DADOS DO ADMIN (EMPRESA)
-    const { data: adminProfile } = await supabaseAdmin
+    // 1. PEGAR DADOS DO ADMIN (Para saber qual empresa o novo usuário herdará)
+    const { data: adminProfile, error: adminProfileError } = await supabaseAdmin
       .from('profiles')
       .select('role, company_id')
       .eq('id', adminUser.id)
       .single();
 
-    if (!adminProfile || (adminProfile.role !== 'admin' && adminProfile.role !== 'super_admin')) {
-      throw new Error('Permissão negada.');
+    if (adminProfileError || !adminProfile) {
+        throw new Error('Não foi possível localizar o perfil do administrador.');
+    }
+
+    if (adminProfile.role !== 'admin' && adminProfile.role !== 'super_admin') {
+      throw new Error('Permissão negada: Apenas administradores podem criar usuários.');
+    }
+
+    if (!adminProfile.company_id) {
+        throw new Error('Erro: Seu perfil de administrador não possui um company_id vinculado.');
     }
 
     const { full_name, employee_id, password } = await req.json();
@@ -44,6 +52,7 @@ serve(async (req: Request) => {
     const companyDomain = adminProfile.company_id.toLowerCase();
     const email = `employee_${employee_id}@${companyDomain}.app`;
     
+    // 2. CRIAR USUÁRIO NA AUTENTICAÇÃO
     const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
         email,
         password,
@@ -51,14 +60,29 @@ serve(async (req: Request) => {
         user_metadata: { full_name, employee_id },
         app_metadata: { 
             role: 'employee',
-            company_id: adminProfile.company_id // HERANÇA CRÍTICA
+            company_id: adminProfile.company_id 
         }
     });
 
     if (createError) throw createError;
+    if (!newUser.user) throw new Error('Erro ao criar usuário na autenticação.');
 
-    // OBS: O trigger no banco deve inserir company_id na tabela profiles
-    // SQL Sugerido: NEW.company_id := (auth.jwt() -> 'app_metadata' ->> 'company_id');
+    // 3. FORÇAR GRAVAÇÃO NO PERFIL (Garantia contra falha de Trigger)
+    // Isso garante que o company_id e o role sejam salvos na tabela pública
+    const { error: profileUpdateError } = await supabaseAdmin
+      .from('profiles')
+      .upsert({
+          id: newUser.user.id,
+          full_name: full_name,
+          employee_id: employee_id,
+          role: 'employee',
+          company_id: adminProfile.company_id
+      }, { onConflict: 'id' });
+
+    if (profileUpdateError) {
+        console.error('Erro ao forçar gravação do perfil:', profileUpdateError);
+        // Não lançamos erro aqui para não travar a criação, mas logamos no console
+    }
 
     return new Response(JSON.stringify({ success: true, user: newUser }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

@@ -23,10 +23,12 @@ function App() {
   const [currentWeekId] = useState<string>(getWeekId(new Date()));
   const [view, setView] = useState<'current' | 'history' | 'manage_users' | 'settings'>('current');
   const [companyName, setCompanyName] = useState<string>('Arranchou');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const fetchData = useCallback(async (currentSession: Session) => {
     try {
       setLoading(true);
+      setErrorMessage(null);
       
       const { data: userProfileData, error: profileError } = await supabase
         .from('profiles')
@@ -34,18 +36,24 @@ function App() {
         .eq('id', currentSession.user.id)
         .single();
 
-      if (profileError || !userProfileData) {
-        throw new Error('Perfil não encontrado.');
+      if (profileError) {
+        console.error("Profile Fetch Error:", profileError);
+        throw new Error(`Erro ao carregar perfil: ${profileError.message}`);
+      }
+      
+      if (!userProfileData) {
+        throw new Error('Perfil não encontrado no banco de dados.');
       }
 
       setProfile(userProfileData);
 
-      // Se o usuário não tem empresa vinculada, não buscamos o restante dos dados
+      // Se o usuário não tem empresa vinculada, paramos aqui
       if (!userProfileData.company_id) {
           setLoading(false);
           return;
       }
 
+      // Buscar nome da empresa nas configurações
       const { data: settingsData } = await supabase
         .from('company_settings')
         .select('setting_value')
@@ -55,6 +63,7 @@ function App() {
 
       setCompanyName(settingsData?.setting_value || `Empresa: ${userProfileData.company_id}`);
 
+      // Buscar dados baseados no cargo
       if (userProfileData.role === 'admin' || userProfileData.role === 'super_admin') {
         const { data: allProfiles } = await supabase
           .from('profiles')
@@ -81,8 +90,9 @@ function App() {
         setAttendanceRecords(userAttendances || []);
       }
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching data:', error);
+      setErrorMessage(error.message);
     } finally {
       setLoading(false);
     }
@@ -101,14 +111,15 @@ function App() {
   }, [fetchData]);
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
       if (session) {
         fetchData(session);
-      } else {
+      } else if (event === 'SIGNED_OUT') {
         setProfile(null);
         setProfiles([]);
         setAttendanceRecords([]);
+        setErrorMessage(null);
       }
     });
     return () => subscription.unsubscribe();
@@ -143,17 +154,48 @@ function App() {
     return <AuthView companyName={companyName} />;
   }
 
-  // TELA DE ERRO: Perfil sem empresa
+  // TELA DE ERRO CRÍTICO (Banco de Dados ou RLS)
+  if (errorMessage) {
+    return (
+      <div className="min-h-screen bg-gray-900 flex flex-col justify-center items-center p-6 text-center">
+          <div className="bg-red-900/20 border border-red-500 p-8 rounded-2xl max-w-md shadow-2xl">
+              <h1 className="text-2xl font-bold text-white mb-4">Erro de Conexão</h1>
+              <p className="text-gray-300 mb-6">
+                Não conseguimos carregar seus dados. Isso pode ser um problema de rede ou permissão de acesso.
+              </p>
+              <div className="bg-black/50 p-3 rounded mb-6 text-xs text-red-400 font-mono text-left overflow-auto max-h-32">
+                {errorMessage}
+              </div>
+              <div className="flex flex-col gap-3">
+                <button 
+                  onClick={() => fetchData(session)}
+                  className="w-full bg-brand-primary hover:bg-brand-secondary text-white font-bold py-3 rounded-xl transition duration-300"
+                >
+                  Tentar Novamente
+                </button>
+                <button 
+                  onClick={handleLogout}
+                  className="w-full bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 rounded-xl transition duration-300"
+                >
+                  Sair
+                </button>
+              </div>
+          </div>
+      </div>
+    );
+  }
+
+  // TELA DE ERRO: Perfil sem empresa vinculada
   if (profile && !profile.company_id) {
       return (
           <div className="min-h-screen bg-gray-900 flex flex-col justify-center items-center p-6 text-center">
               <div className="bg-red-900/20 border border-red-500 p-8 rounded-2xl max-w-md shadow-2xl">
                   <h1 className="text-2xl font-bold text-white mb-4">Conta Não Vinculada</h1>
                   <p className="text-gray-300 mb-6">
-                      Olá, <strong>{profile.full_name}</strong>. Sua conta ainda não foi associada a nenhuma empresa no sistema.
+                      Olá, <strong>{profile.full_name}</strong>. Sua conta ainda não foi associada a nenhuma empresa.
                   </p>
                   <p className="text-sm text-gray-400 mb-8">
-                      ID do Usuário: <code className="bg-black/50 p-1 rounded text-xs">{profile.id}</code>
+                      Entre em contato com o suporte para vincular seu perfil.
                   </p>
                   <button 
                     onClick={handleLogout}
@@ -175,6 +217,11 @@ function App() {
     <div className="container mx-auto px-2 sm:px-4 py-4 sm:py-8 max-w-7xl">
       <Header session={session} profile={profile} onLogout={handleLogout} companyName={companyName} />
       <main>
+        {loading && (
+           <div className="fixed top-4 right-4 z-50">
+              <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-brand-primary"></div>
+           </div>
+        )}
         {isAdmin ? (
           <>
             <nav className="mb-8 flex justify-around sm:justify-center border-b border-gray-700">
