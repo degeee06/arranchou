@@ -80,10 +80,12 @@ const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance,
 
     if (!currentStatus) {
         // STATE 1 -> 2: Mark as Reserved (Green)
-        setAttendanceRecords(prev => [...prev.filter(r => !(r.user_id === personId && r.week_id === currentWeekId && r.day === day)), { user_id: personId, week_id: currentWeekId, day, is_present: true, validated: false }]);
+        // FIX: Added missing company_id to the AttendanceRecord object.
+        setAttendanceRecords(prev => [...prev.filter(r => !(r.user_id === personId && r.week_id === currentWeekId && r.day === day)), { user_id: personId, week_id: currentWeekId, day, is_present: true, validated: false, company_id: adminProfile.company_id }]);
         
+        // FIX: Added missing company_id to the database upsert call.
         const { data, error } = await supabase.from('attendances').upsert(
-            { user_id: personId, week_id: currentWeekId, day, is_present: true, validated: false },
+            { user_id: personId, week_id: currentWeekId, day, is_present: true, validated: false, company_id: adminProfile.company_id },
             { onConflict: 'user_id,week_id,day' }
         ).select();
 
@@ -93,8 +95,9 @@ const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance,
         // STATE 2 -> 3: Mark as Validated/Check-in (Blue)
         setAttendanceRecords(prev => prev.map(r => (r.user_id === personId && r.week_id === currentWeekId && r.day === day) ? { ...r, is_present: true, validated: true } : r));
 
+        // FIX: Added missing company_id to the database upsert call.
         const { data, error } = await supabase.from('attendances').upsert(
-            { user_id: personId, week_id: currentWeekId, day, is_present: true, validated: true },
+            { user_id: personId, week_id: currentWeekId, day, is_present: true, validated: true, company_id: adminProfile.company_id },
             { onConflict: 'user_id,week_id,day' }
         ).select();
         
@@ -104,8 +107,9 @@ const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance,
          // STATE 3 -> 4: Mark as Absent/No-Show (Red)
          setAttendanceRecords(prev => prev.map(r => (r.user_id === personId && r.week_id === currentWeekId && r.day === day) ? { ...r, is_present: false, validated: false } : r));
 
+         // FIX: Added missing company_id to the database upsert call.
          const { data, error } = await supabase.from('attendances').upsert(
-             { user_id: personId, week_id: currentWeekId, day, is_present: false, validated: false },
+             { user_id: personId, week_id: currentWeekId, day, is_present: false, validated: false, company_id: adminProfile.company_id },
              { onConflict: 'user_id,week_id,day' }
          ).select();
          
@@ -152,17 +156,19 @@ const CurrentWeekView: React.FC<CurrentWeekViewProps> = ({ profiles, attendance,
     setAttendanceRecords(prev => {
         const withoutOriginal = prev.filter(r => !(r.user_id === originalPerson.id && r.week_id === currentWeekId && r.day === currentDay));
         const withoutSub = withoutOriginal.filter(r => !(r.user_id === substituteId && r.week_id === currentWeekId && r.day === currentDay));
+        // FIX: Added missing company_id to both AttendanceRecord objects.
         return [
             ...withoutSub,
-            { user_id: originalPerson.id, week_id: currentWeekId, day: currentDay, is_present: false, validated: false },
-            { user_id: substituteId, week_id: currentWeekId, day: currentDay, is_present: true, validated: false }
+            { user_id: originalPerson.id, week_id: currentWeekId, day: currentDay, is_present: false, validated: false, company_id: adminProfile.company_id },
+            { user_id: substituteId, week_id: currentWeekId, day: currentDay, is_present: true, validated: false, company_id: adminProfile.company_id }
         ];
     });
 
     // DB Operations in parallel
+    // FIX: Added missing company_id to both database upsert calls.
     const [originalResult, substituteResult] = await Promise.all([
-        supabase.from('attendances').upsert({ user_id: originalPerson.id, week_id: currentWeekId, day: currentDay, is_present: false, validated: false }, { onConflict: 'user_id,week_id,day' }).select(),
-        supabase.from('attendances').upsert({ user_id: substituteId, week_id: currentWeekId, day: currentDay, is_present: true, validated: false }, { onConflict: 'user_id,week_id,day' }).select()
+        supabase.from('attendances').upsert({ user_id: originalPerson.id, week_id: currentWeekId, day: currentDay, is_present: false, validated: false, company_id: adminProfile.company_id }, { onConflict: 'user_id,week_id,day' }).select(),
+        supabase.from('attendances').upsert({ user_id: substituteId, week_id: currentWeekId, day: currentDay, is_present: true, validated: false, company_id: adminProfile.company_id }, { onConflict: 'user_id,week_id,day' }).select()
     ]);
 
     // Check for errors

@@ -1,3 +1,4 @@
+
 export type DayKey = 'Segunda' | 'Terça' | 'Quarta' | 'Quinta' | 'Sexta' | 'Sábado' | 'Domingo';
 
 export interface Profile {
@@ -6,6 +7,7 @@ export interface Profile {
   full_name: string;
   employee_id: string;
   role: 'super_admin' | 'admin' | 'employee';
+  company_id: string; // Novo campo para identificar a empresa (ex: 'ALFA', 'BETA')
 }
 
 export interface AttendanceRecord {
@@ -14,7 +16,8 @@ export interface AttendanceRecord {
   week_id: string;
   day: DayKey;
   is_present: boolean;
-  validated: boolean; // Novo campo
+  validated: boolean;
+  company_id: string; // Identificador da empresa no registro de presença
   created_at?: string;
 }
 
@@ -23,8 +26,6 @@ export interface AttendanceStatus {
   validated: boolean;
 }
 
-// This will be the transformed structure for easier use in components
-// Mudança: Agora armazena um objeto com status, não apenas booleano
 export type Attendance = {
   [personId: string]: {
     [day in DayKey]?: AttendanceStatus;

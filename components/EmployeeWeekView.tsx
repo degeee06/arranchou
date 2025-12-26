@@ -37,11 +37,13 @@ const EmployeeWeekView: React.FC<EmployeeWeekViewProps> = ({ profile, attendance
         } else {
             // Optimistic update: From not marked/absent to present (upsert)
             // Default validated to false
-            setAttendanceRecords(prev => [...prev.filter(r => !(r.user_id === profile.id && r.week_id === currentWeekId && r.day === day)), { user_id: profile.id, week_id: currentWeekId, day, is_present: true, validated: false }]);
+            // FIX: Added missing company_id to the AttendanceRecord object.
+            setAttendanceRecords(prev => [...prev.filter(r => !(r.user_id === profile.id && r.week_id === currentWeekId && r.day === day)), { user_id: profile.id, week_id: currentWeekId, day, is_present: true, validated: false, company_id: profile.company_id }]);
             
             // DB operation
+            // FIX: Added missing company_id to the database upsert call.
             const { data, error } = await supabase.from('attendances').upsert(
-                { user_id: profile.id, week_id: currentWeekId, day, is_present: true, validated: false },
+                { user_id: profile.id, week_id: currentWeekId, day, is_present: true, validated: false, company_id: profile.company_id },
                 { onConflict: 'user_id,week_id,day' }
             ).select();
 
@@ -58,7 +60,7 @@ const EmployeeWeekView: React.FC<EmployeeWeekViewProps> = ({ profile, attendance
             <h2 className="text-2xl font-bold mb-1 text-white">Minha Presença na Semana</h2>
             <p className="text-gray-400 mb-6">Marque os dias que você irá comparecer. As alterações são salvas automaticamente.</p>
             <div className="overflow-x-auto">
-                <table className="min-w-full">
+                <table className="min-full">
                     <tbody className="divide-y divide-gray-700">
                         {DAYS_OF_WEEK.map((day, index) => {
                             const status = attendance[profile.id]?.[day];
