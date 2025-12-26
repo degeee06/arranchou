@@ -26,57 +26,72 @@ const SettingsView: React.FC<SettingsViewProps> = ({ initialCompanyName, setComp
     setSuccess(null);
 
     try {
+      if (!profile.company_id) throw new Error("ID da empresa não localizado no seu perfil.");
+
       const { error: dbError } = await supabase
         .from('company_settings')
         .upsert({ 
-          company_id: profile.company_id, // Garante que salva na empresa certa
+          company_id: profile.company_id,
           setting_key: 'company_name',
-          setting_value: name 
+          setting_value: name.trim() 
         }, { onConflict: 'company_id,setting_key' });
 
       if (dbError) throw dbError;
       
-      setCompanyName(name);
-      setSuccess('Configurações atualizadas!');
+      setCompanyName(name.trim());
+      setSuccess('Configurações atualizadas com sucesso!');
+      setTimeout(() => setSuccess(null), 3000);
 
     } catch (err: any) {
+      console.error("Erro ao salvar:", err);
       setError(`Erro ao salvar: ${err.message}`);
     } finally {
       setLoading(false);
-      setTimeout(() => setSuccess(null), 3000);
     }
   };
 
   return (
     <div className="bg-gray-800 rounded-lg shadow p-4 sm:p-6 max-w-2xl mx-auto border border-gray-700">
-      <h2 className="text-xl font-bold text-gray-200 mb-4">Configurações da Empresa ({profile.company_id})</h2>
+      <div className="mb-6">
+        <h2 className="text-xl font-bold text-gray-200">Ajustes da Unidade</h2>
+        <p className="text-xs text-gray-500 mt-1 uppercase tracking-widest font-mono">Código: {profile.company_id}</p>
+      </div>
       
-      <form onSubmit={handleSave} className="space-y-4">
-        <div>
-          <label htmlFor="companyName" className="block text-sm font-medium text-gray-300 mb-2">
-            Nome de Exibição da Empresa
+      <form onSubmit={handleSave} className="space-y-6">
+        <div className="space-y-2">
+          <label htmlFor="companyName" className="block text-xs font-bold text-gray-400 uppercase tracking-widest">
+            Nome de Exibição (Cabeçalho)
           </label>
           <input
             type="text"
             id="companyName"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-primary focus:border-brand-primary text-white"
-            placeholder="Ex: Construtora Alfa"
+            className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-xl text-white focus:ring-2 focus:ring-brand-primary outline-none transition-all"
+            placeholder="Ex: Unidade Centro"
             required
           />
         </div>
 
-        {error && <p className="text-center text-red-400 text-sm bg-red-900/50 p-3 rounded-md">{error}</p>}
-        {success && <p className="text-center text-green-400 text-sm bg-green-900/50 p-3 rounded-md">{success}</p>}
+        {error && (
+            <div className="p-3 bg-red-900/30 border border-red-500/50 rounded-lg text-red-400 text-sm font-medium">
+                {error}
+            </div>
+        )}
+        
+        {success && (
+            <div className="p-3 bg-green-900/30 border border-green-500/50 rounded-lg text-green-400 text-sm font-medium animate-pulse">
+                {success}
+            </div>
+        )}
 
         <div className="flex justify-end">
           <button
             type="submit"
-            disabled={loading || name === initialCompanyName}
-            className="bg-brand-primary hover:bg-brand-secondary text-white font-bold py-2 px-4 rounded-md transition duration-300 disabled:bg-gray-600"
+            disabled={loading || name.trim() === initialCompanyName.trim()}
+            className="w-full sm:w-auto bg-brand-primary hover:bg-brand-secondary text-white font-bold py-3 px-8 rounded-xl transition duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
           >
-            {loading ? 'Salvando...' : 'Salvar Alterações'}
+            {loading ? 'Processando...' : 'Salvar Alterações'}
           </button>
         </div>
       </form>

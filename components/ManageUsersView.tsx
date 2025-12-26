@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Profile } from '../types';
 import { supabase } from '../supabase';
 import Modal from './Modal';
-import { DotsVerticalIcon, UserPlusIcon, SearchIcon } from './icons';
+import { DotsVerticalIcon, UserPlusIcon, SearchIcon, TrashIcon, UsersIcon } from './icons';
 import PaginationControls from './PaginationControls';
 
 interface ManageUsersViewProps {
@@ -45,26 +45,56 @@ const ManageUsersView: React.FC<ManageUsersViewProps> = ({ profiles, setProfiles
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [openMenuId]);
+
+  const handleUpdateRole = async (targetUser: Profile, newRole: 'admin' | 'employee') => {
+    setLoading(prev => ({ ...prev, [targetUser.id]: true }));
+    setOpenMenuId(null);
+    try {
+      const { data, error: funcError } = await supabase.functions.invoke('update-user-role', {
+        body: { user_id: targetUser.id, new_role: newRole },
+      });
+      if (funcError) throw funcError;
+      if (data?.error) throw new Error(data.error);
+
+      setProfiles(prev => prev.map(p => p.id === targetUser.id ? { ...p, role: newRole } : p));
+      setError(`Cargo de ${targetUser.full_name} atualizado com sucesso.`);
+      setTimeout(() => setError(null), 3000);
+    } catch (err: any) {
+      setError(err.message || 'Falha ao atualizar cargo.');
+    } finally {
+      setLoading(prev => ({ ...prev, [targetUser.id]: false }));
+    }
+  };
+
+  const handleDeleteUser = async () => {
+    if (!removeConfirm) return;
+    setLoading(prev => ({ ...prev, [removeConfirm.id]: true }));
+    try {
+      const { data, error: funcError } = await supabase.functions.invoke('delete-user', {
+        body: { user_id: removeConfirm.id },
+      });
+      if (funcError) throw funcError;
+      if (data?.error) throw new Error(data.error);
+
+      setProfiles(prev => prev.filter(p => p.id !== removeConfirm.id));
+      setRemoveConfirm(null);
+      setError(`Usuário ${removeConfirm.full_name} removido.`);
+      setTimeout(() => setError(null), 3000);
+    } catch (err: any) {
+      setError(err.message || 'Falha ao remover usuário.');
+    } finally {
+      setLoading(prev => ({ ...prev, [removeConfirm?.id || '']: false }));
+    }
+  };
   
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentUserProfile.company_id) {
-        setError("Erro: Sua conta não tem uma empresa vinculada.");
-        return;
-    }
-    
     setIsCreatingUser(true);
     setError(null);
-
     try {
         const { data, error: funcError } = await supabase.functions.invoke('create-user', {
-            body: {
-                full_name: newFullName,
-                employee_id: newEmployeeId,
-                password: newPassword,
-            },
+            body: { full_name: newFullName, employee_id: newEmployeeId, password: newPassword },
         });
-
         if (funcError) throw funcError;
         if (data?.error) throw new Error(data.error);
         
@@ -72,13 +102,9 @@ const ManageUsersView: React.FC<ManageUsersViewProps> = ({ profiles, setProfiles
         setNewFullName('');
         setNewEmployeeId('');
         setNewPassword('');
-        
-        setError("Sucesso! Usuário criado. Clique em Sair e entre novamente para atualizar a lista.");
-        setTimeout(() => setError(null), 8000);
-        
+        setError("Sucesso! Usuário criado. Saia e entre novamente para sincronizar.");
     } catch (err: any) {
-        console.error('Erro na criação:', err);
-        setError(err.message || 'Falha ao conectar com o servidor de criação.');
+        setError(err.message || 'Falha ao criar usuário.');
     } finally {
         setIsCreatingUser(false);
     }
@@ -121,67 +147,88 @@ const ManageUsersView: React.FC<ManageUsersViewProps> = ({ profiles, setProfiles
         </div>
 
         {error && (
-            <div className={`mb-4 text-center p-4 rounded-xl text-sm font-bold ${error.includes('Sucesso') ? 'bg-green-900/30 text-green-400 border border-green-500/30' : 'bg-red-900/30 text-red-400 border border-red-500/30'}`}>
+            <div className={`mb-4 text-center p-4 rounded-xl text-sm font-bold ${error.includes('Sucesso') ? 'bg-green-900/30 text-green-400' : 'bg-red-900/30 text-red-400'}`}>
                 {error}
             </div>
         )}
 
-        {paginatedProfiles.length <= 1 ? (
-            <div className="text-center py-16 bg-gray-900/40 rounded-xl border border-dashed border-gray-700">
-                <p className="text-gray-400">Nenhum funcionário encontrado.</p>
-                <p className="text-[10px] text-brand-accent mt-4 px-6 uppercase tracking-widest opacity-70">
-                   Se você já criou usuários, eles podem estar ocultos por permissões do banco. <br/>
-                   Experimente fazer Logout e Login.
-                </p>
-            </div>
-        ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-700">
-                <thead className="bg-gray-700/30">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-widest">Nome</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-widest">Cargo</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-widest">Ações</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-transparent divide-y divide-gray-700">
-                  {paginatedProfiles.map(person => (
-                    <tr key={person.id} className="hover:bg-gray-700/20 transition-colors">
-                      <td className="px-6 py-4 text-sm font-medium text-white">{person.full_name}</td>
-                      <td className="px-6 py-4">
-                        <span className={`px-2 py-0.5 text-[10px] font-bold rounded uppercase tracking-tighter ${person.role === 'admin' ? 'bg-brand-primary text-white' : 'bg-gray-700 text-gray-400'}`}>
-                            {ROLES_MAP[person.role]}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-right text-sm">
-                        <button onClick={() => setOpenMenuId(person.id)} className="text-gray-400 hover:text-white"><DotsVerticalIcon /></button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-        )}
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-700">
+            <thead className="bg-gray-700/30">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-widest">Nome</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-widest">Cargo</th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-widest">Ações</th>
+              </tr>
+            </thead>
+            <tbody className="bg-transparent divide-y divide-gray-700">
+              {paginatedProfiles.map(person => (
+                <tr key={person.id} className="hover:bg-gray-700/20 transition-colors">
+                  <td className="px-6 py-4 text-sm font-medium text-white">
+                    <div className="flex flex-col">
+                        <span>{person.full_name}</span>
+                        <span className="text-[10px] text-gray-500 font-mono">{person.employee_id}</span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className={`px-2 py-0.5 text-[10px] font-bold rounded uppercase tracking-tighter ${person.role === 'employee' ? 'bg-gray-700 text-gray-400' : 'bg-brand-primary text-white'}`}>
+                        {ROLES_MAP[person.role]}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 text-right text-sm">
+                    {person.id !== currentUserProfile.id && (
+                        <div className="relative inline-block text-left actions-menu-container">
+                            <button onClick={() => setOpenMenuId(openMenuId === person.id ? null : person.id)} className="text-gray-400 hover:text-white p-1" disabled={loading[person.id]}>
+                                {loading[person.id] ? <div className="animate-spin h-4 w-4 border-2 border-brand-primary border-t-transparent rounded-full" /> : <DotsVerticalIcon />}
+                            </button>
+                            {openMenuId === person.id && (
+                                <div className="origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-gray-700 ring-1 ring-black ring-opacity-5 z-20">
+                                    <div className="py-1">
+                                        {person.role === 'employee' ? (
+                                            <button onClick={() => handleUpdateRole(person, 'admin')} className="flex items-center gap-2 w-full text-left px-4 py-2 text-xs text-gray-200 hover:bg-gray-600">
+                                                <UsersIcon /> Tornar Admin
+                                            </button>
+                                        ) : (
+                                            <button onClick={() => handleUpdateRole(person, 'employee')} className="flex items-center gap-2 w-full text-left px-4 py-2 text-xs text-gray-200 hover:bg-gray-600">
+                                                <UsersIcon /> Tornar Funcionário
+                                            </button>
+                                        )}
+                                        <button onClick={() => { setRemoveConfirm(person); setOpenMenuId(null); }} className="flex items-center gap-2 w-full text-left px-4 py-2 text-xs text-red-400 hover:bg-gray-600">
+                                            <TrashIcon /> Remover Usuário
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <PaginationControls currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />
       </div>
 
       <Modal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} title="Novo Usuário">
         <form onSubmit={handleCreateUser} className="flex flex-col gap-4 mt-4">
-            <div className="space-y-1">
-                <label className="text-[10px] text-gray-500 font-bold uppercase tracking-widest ml-1">Nome Completo</label>
-                <input className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-xl text-white focus:ring-2 focus:ring-brand-primary outline-none transition-all" type="text" placeholder="Ex: João da Silva" value={newFullName} onChange={e => setNewFullName(e.target.value)} required />
-            </div>
-            <div className="space-y-1">
-                <label className="text-[10px] text-gray-500 font-bold uppercase tracking-widest ml-1">Nº Matrícula</label>
-                <input className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-xl text-white focus:ring-2 focus:ring-brand-primary outline-none transition-all" type="text" placeholder="Ex: 102030" value={newEmployeeId} onChange={e => setNewEmployeeId(e.target.value)} required />
-            </div>
-            <div className="space-y-1">
-                <label className="text-[10px] text-gray-500 font-bold uppercase tracking-widest ml-1">Senha de Acesso</label>
-                <input className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-xl text-white focus:ring-2 focus:ring-brand-primary outline-none transition-all" type="password" placeholder="Mínimo 6 dígitos" value={newPassword} onChange={e => setNewPassword(e.target.value)} required minLength={6} />
-            </div>
-            <button type="submit" className="w-full bg-brand-primary hover:bg-brand-secondary text-white font-bold py-4 rounded-xl shadow-xl mt-2 disabled:opacity-50 transition-all active:scale-95" disabled={isCreatingUser}>
-                {isCreatingUser ? 'Processando Cadastro...' : 'Salvar Funcionário'}
+            <input className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-xl text-white outline-none" type="text" placeholder="Nome Completo" value={newFullName} onChange={e => setNewFullName(e.target.value)} required />
+            <input className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-xl text-white outline-none" type="text" placeholder="Matrícula" value={newEmployeeId} onChange={e => setNewEmployeeId(e.target.value)} required />
+            <input className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-xl text-white outline-none" type="password" placeholder="Senha" value={newPassword} onChange={e => setNewPassword(e.target.value)} required minLength={6} />
+            <button type="submit" className="w-full bg-brand-primary hover:bg-brand-secondary text-white font-bold py-4 rounded-xl disabled:opacity-50" disabled={isCreatingUser}>
+                {isCreatingUser ? 'Criando...' : 'Salvar Funcionário'}
             </button>
         </form>
+      </Modal>
+
+      <Modal isOpen={!!removeConfirm} onClose={() => setRemoveConfirm(null)} title="Confirmar Remoção">
+        <div className="mt-4">
+            <p className="text-sm text-gray-400">Tem certeza que deseja remover <strong>{removeConfirm?.full_name}</strong>? Esta ação é irreversível.</p>
+            <div className="mt-6 flex justify-end gap-3">
+                <button onClick={() => setRemoveConfirm(null)} className="px-4 py-2 text-sm bg-gray-600 text-white rounded-md">Cancelar</button>
+                <button onClick={handleDeleteUser} className="px-4 py-2 text-sm bg-red-600 text-white rounded-md">Sim, Remover</button>
+            </div>
+        </div>
       </Modal>
     </>
   );
