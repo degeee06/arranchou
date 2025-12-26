@@ -21,22 +21,25 @@ const SettingsView: React.FC<SettingsViewProps> = ({ initialCompanyName, setComp
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!name.trim()) return;
+    
     setLoading(true);
     setError(null);
     setSuccess(null);
 
     try {
-      if (!profile.company_id) throw new Error("ID da empresa não localizado no seu perfil.");
+      if (!profile.company_id) throw new Error("ID da empresa não localizado.");
 
-      const { error: dbError } = await supabase
-        .from('company_settings')
-        .upsert({ 
+      const { data, error: funcError } = await supabase.functions.invoke('update-company-settings', {
+        body: { 
           company_id: profile.company_id,
           setting_key: 'company_name',
           setting_value: name.trim() 
-        }, { onConflict: 'company_id,setting_key' });
+        },
+      });
 
-      if (dbError) throw dbError;
+      if (funcError) throw funcError;
+      if (data?.error) throw new Error(data.error);
       
       setCompanyName(name.trim());
       setSuccess('Configurações atualizadas com sucesso!');
@@ -44,14 +47,14 @@ const SettingsView: React.FC<SettingsViewProps> = ({ initialCompanyName, setComp
 
     } catch (err: any) {
       console.error("Erro ao salvar:", err);
-      setError(`Erro ao salvar: ${err.message}`);
+      setError(err.message || 'Erro desconhecido ao salvar.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="bg-gray-800 rounded-lg shadow p-4 sm:p-6 max-w-2xl mx-auto border border-gray-700">
+    <div className="bg-gray-800 rounded-lg shadow p-4 sm:p-6 max-w-2xl mx-auto border border-gray-700 animate-in fade-in slide-in-from-bottom-2">
       <div className="mb-6">
         <h2 className="text-xl font-bold text-gray-200">Ajustes da Unidade</h2>
         <p className="text-xs text-gray-500 mt-1 uppercase tracking-widest font-mono">Código: {profile.company_id}</p>
@@ -69,6 +72,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ initialCompanyName, setComp
             onChange={(e) => setName(e.target.value)}
             className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-xl text-white focus:ring-2 focus:ring-brand-primary outline-none transition-all"
             placeholder="Ex: Unidade Centro"
+            disabled={loading}
             required
           />
         </div>
@@ -80,7 +84,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ initialCompanyName, setComp
         )}
         
         {success && (
-            <div className="p-3 bg-green-900/30 border border-green-500/50 rounded-lg text-green-400 text-sm font-medium animate-pulse">
+            <div className="p-3 bg-green-900/30 border border-green-500/50 rounded-lg text-green-400 text-sm font-medium">
                 {success}
             </div>
         )}
