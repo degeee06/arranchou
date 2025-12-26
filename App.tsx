@@ -28,7 +28,6 @@ function App() {
     try {
       setLoading(true);
       
-      // 1. Busca o Perfil (Já filtrado pelo RLS por empresa se configurado no SQL)
       const { data: userProfileData, error: profileError } = await supabase
         .from('profiles')
         .select('*')
@@ -41,7 +40,12 @@ function App() {
 
       setProfile(userProfileData);
 
-      // 2. Busca Nome Personalizado da Empresa
+      // Se o usuário não tem empresa vinculada, não buscamos o restante dos dados
+      if (!userProfileData.company_id) {
+          setLoading(false);
+          return;
+      }
+
       const { data: settingsData } = await supabase
         .from('company_settings')
         .select('setting_value')
@@ -49,13 +53,8 @@ function App() {
         .eq('setting_key', 'company_name')
         .maybeSingle();
 
-      if (settingsData) {
-        setCompanyName(settingsData.setting_value);
-      } else {
-        setCompanyName(`Arranchou - ${userProfileData.company_id}`);
-      }
+      setCompanyName(settingsData?.setting_value || `Empresa: ${userProfileData.company_id}`);
 
-      // 3. Busca Dados (Funcionários e Presenças)
       if (userProfileData.role === 'admin' || userProfileData.role === 'super_admin') {
         const { data: allProfiles } = await supabase
           .from('profiles')
@@ -71,7 +70,6 @@ function App() {
 
         setAttendanceRecords(currentWeekAttendances || []);
       } else {
-        // Funcionário comum vê apenas a si mesmo
         setProfiles([userProfileData]);
         const recentWeeks = getPastWeeksIds(8);
         const { data: userAttendances } = await supabase
@@ -141,9 +139,34 @@ function App() {
     );
   }
 
-  if (!session || !profile) {
+  if (!session) {
     return <AuthView companyName={companyName} />;
   }
+
+  // TELA DE ERRO: Perfil sem empresa
+  if (profile && !profile.company_id) {
+      return (
+          <div className="min-h-screen bg-gray-900 flex flex-col justify-center items-center p-6 text-center">
+              <div className="bg-red-900/20 border border-red-500 p-8 rounded-2xl max-w-md shadow-2xl">
+                  <h1 className="text-2xl font-bold text-white mb-4">Conta Não Vinculada</h1>
+                  <p className="text-gray-300 mb-6">
+                      Olá, <strong>{profile.full_name}</strong>. Sua conta ainda não foi associada a nenhuma empresa no sistema.
+                  </p>
+                  <p className="text-sm text-gray-400 mb-8">
+                      ID do Usuário: <code className="bg-black/50 p-1 rounded text-xs">{profile.id}</code>
+                  </p>
+                  <button 
+                    onClick={handleLogout}
+                    className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl transition duration-300"
+                  >
+                    Sair e Tentar Novamente
+                  </button>
+              </div>
+          </div>
+      );
+  }
+
+  if (!profile) return <AuthView companyName={companyName} />;
   
   const isAdmin = profile.role === 'admin' || profile.role === 'super_admin';
   const isSuperAdmin = profile.role === 'super_admin';

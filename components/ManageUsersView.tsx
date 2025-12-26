@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Profile } from '../types';
 import { supabase } from '../supabase';
@@ -25,7 +26,6 @@ const ManageUsersView: React.FC<ManageUsersViewProps> = ({ profiles, setProfiles
   const [removeConfirm, setRemoveConfirm] = useState<Profile | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   
-  // State for the new user modal
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [newFullName, setNewFullName] = useState('');
   const [newEmployeeId, setNewEmployeeId] = useState('');
@@ -49,7 +49,6 @@ const ManageUsersView: React.FC<ManageUsersViewProps> = ({ profiles, setProfiles
     };
   }, [openMenuId]);
   
-  // Reset page to 1 when search query changes
   useEffect(() => {
     setCurrentPage(1);
   }, [searchQuery]);
@@ -82,9 +81,7 @@ const ManageUsersView: React.FC<ManageUsersViewProps> = ({ profiles, setProfiles
   
 const handleRemoveUser = async () => {
     if (!removeConfirm) return;
-
     const userToDelete = removeConfirm;
-
     setLoading(prev => ({ ...prev, [userToDelete.id]: true }));
     setError(null);
 
@@ -92,13 +89,9 @@ const handleRemoveUser = async () => {
       const { error: functionError } = await supabase.functions.invoke('delete-user', {
           body: { user_id: userToDelete.id },
       });
-
-      if (functionError) {
-          throw new Error(`A remoção falhou. A conta de autenticação do usuário não pôde ser removida. Detalhes: ${functionError.message}`);
-      }
+      if (functionError) throw functionError;
       setProfiles(prevProfiles => prevProfiles.filter(p => p.id !== userToDelete.id));
       setRemoveConfirm(null);
-
     } catch (err: any) {
         console.error('Error during user removal process:', err);
         setError(err.message || 'Ocorreu um erro desconhecido durante a remoção.');
@@ -109,11 +102,16 @@ const handleRemoveUser = async () => {
 
 const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!currentUserProfile.company_id) {
+        setError("Erro crítico: Seu perfil de administrador não está vinculado a uma empresa. Não é possível criar novos usuários.");
+        return;
+    }
+    
     setIsCreatingUser(true);
     setError(null);
 
     try {
-        const { data, error } = await supabase.functions.invoke('create-user', {
+        const { error } = await supabase.functions.invoke('create-user', {
             body: {
                 full_name: newFullName,
                 employee_id: newEmployeeId,
@@ -121,20 +119,12 @@ const handleCreateUser = async (e: React.FormEvent) => {
             },
         });
 
-        if (error) {
-            throw error;
-        }
-
-        // A realtime subscription in App.tsx should add the user,
-        // but we can add it here for immediate feedback if needed.
-        // The trigger on auth.users handles profile creation.
+        if (error) throw error;
         
-        // Reset form and close modal
         setIsCreateModalOpen(false);
         setNewFullName('');
         setNewEmployeeId('');
         setNewPassword('');
-
     } catch (err: any) {
         console.error('Error creating user:', err);
         setError(err.message || 'Falha ao criar usuário. O Nº do Crachá pode já existir.');
@@ -143,7 +133,6 @@ const handleCreateUser = async (e: React.FormEvent) => {
     }
 };
 
-  
   const sortedProfiles = [...profiles]
     .filter(person => {
         const query = searchQuery.toLowerCase();
@@ -157,13 +146,11 @@ const handleCreateUser = async (e: React.FormEvent) => {
         return a.full_name.localeCompare(b.full_name);
   });
 
-  // Pagination Logic
   const totalPages = Math.ceil(sortedProfiles.length / ITEMS_PER_PAGE);
   const paginatedProfiles = sortedProfiles.slice(
     (currentPage - 1) * ITEMS_PER_PAGE,
     currentPage * ITEMS_PER_PAGE
   );
-
 
   return (
     <>
@@ -227,7 +214,10 @@ const handleCreateUser = async (e: React.FormEvent) => {
                 
                 return (
                   <tr key={person.id} className="hover:bg-gray-700">
-                    <td className="px-2 sm:px-6 py-4 whitespace-nowrap text-sm font-medium text-white">{person.full_name}</td>
+                    <td className="px-2 sm:px-6 py-4 whitespace-nowrap text-sm font-medium text-white">
+                        <span className={!person.company_id ? "text-yellow-400" : ""}>{person.full_name}</span>
+                        {!person.company_id && <span className="ml-2 text-[10px] bg-yellow-900/50 text-yellow-500 px-1 rounded">ÓRFÃO</span>}
+                    </td>
                     <td className="px-2 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-300">{person.employee_id}</td>
                     <td className="px-2 sm:px-6 py-4 whitespace-nowrap text-sm">
                       <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
@@ -243,42 +233,24 @@ const handleCreateUser = async (e: React.FormEvent) => {
                         <button
                           onClick={() => setOpenMenuId(openMenuId === person.id ? null : person.id)}
                           disabled={isLoading}
-                          className="p-2 rounded-full text-gray-400 hover:bg-gray-600 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-brand-primary"
-                          id={`menu-button-${person.id}`}
-                          aria-haspopup="true"
-                          aria-expanded={openMenuId === person.id}
+                          className="p-2 rounded-full text-gray-400 hover:bg-gray-600 disabled:opacity-50 focus:outline-none"
                         >
-                          <span className="sr-only">Opções para {person.full_name}</span>
-                          {isLoading ? (
-                            <span className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent block"></span>
-                          ) : (
-                            <DotsVerticalIcon />
-                          )}
+                          {isLoading ? <span className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent block"></span> : <DotsVerticalIcon />}
                         </button>
-
                         {openMenuId === person.id && (
-                          <div
-                            className="origin-top-right absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-gray-700 ring-1 ring-black ring-opacity-5 z-10 focus:outline-none"
-                            role="menu"
-                            aria-orientation="vertical"
-                            aria-labelledby={`menu-button-${person.id}`}
-                          >
-                            <div className="py-1" role="none">
+                          <div className="origin-top-right absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-gray-700 ring-1 ring-black ring-opacity-5 z-10">
+                            <div className="py-1">
                               <button
                                 onClick={() => { handleRoleChange(person); setOpenMenuId(null); }}
                                 disabled={!canManageRole}
-                                className="w-full text-left block px-4 py-2 text-sm text-gray-200 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                                role="menuitem"
-                                title={!canManageRole ? 'Você não tem permissão para alterar este cargo.' : (person.role === 'admin' ? 'Rebaixar para Funcionário' : 'Promover para Admin')}
+                                className="w-full text-left block px-4 py-2 text-sm text-gray-200 hover:bg-gray-600 disabled:opacity-50"
                               >
                                 {person.role === 'admin' ? 'Rebaixar para Funcionário' : 'Promover para Admin'}
                               </button>
                               <button
                                 onClick={() => { setRemoveConfirm(person); setOpenMenuId(null); }}
                                 disabled={!canDelete}
-                                className="w-full text-left block px-4 py-2 text-sm text-red-400 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                                role="menuitem"
-                                title={!canDelete ? 'Você não tem permissão para remover este usuário.' : 'Remover usuário permanentemente'}
+                                className="w-full text-left block px-4 py-2 text-sm text-red-400 hover:bg-gray-600 disabled:opacity-50"
                               >
                                 Remover Usuário
                               </button>
@@ -293,90 +265,54 @@ const handleCreateUser = async (e: React.FormEvent) => {
             </tbody>
           </table>
         </div>
-        <PaginationControls
-          currentPage={currentPage}
-          totalPages={totalPages}
-          onPageChange={setCurrentPage}
-        />
+        <PaginationControls currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />
       </div>
 
-      {/* Create User Modal */}
-      <Modal 
-        isOpen={isCreateModalOpen}
-        onClose={() => setIsCreateModalOpen(false)}
-        title="Criar Novo Usuário"
-      >
+      <Modal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} title="Criar Novo Usuário">
         <form onSubmit={handleCreateUser} className="flex flex-col gap-4 mt-4">
              <div className="mb-2">
-                <label className="block text-gray-300 text-sm font-bold mb-2" htmlFor="newFullName">
-                    Nome Completo
-                </label>
+                <label className="block text-gray-300 text-sm font-bold mb-2">Nome Completo</label>
                 <input
-                    id="newFullName"
-                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-primary focus:border-brand-primary text-white"
+                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
                     type="text"
-                    placeholder="Nome completo do funcionário"
                     value={newFullName}
                     onChange={(e) => setNewFullName(e.target.value)}
                     required
                 />
             </div>
             <div className="mb-2">
-                <label className="block text-gray-300 text-sm font-bold mb-2" htmlFor="newEmployeeId">
-                    Nº do Crachá / Matrícula
-                </label>
+                <label className="block text-gray-300 text-sm font-bold mb-2">Nº do Crachá / Matrícula</label>
                 <input
-                    id="newEmployeeId"
-                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-primary focus:border-brand-primary text-white"
+                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
                     type="text"
-                    placeholder="Número de identificação único"
                     value={newEmployeeId}
                     onChange={(e) => setNewEmployeeId(e.target.value)}
                     required
                 />
             </div>
             <div className="mb-4">
-                <label className="block text-gray-300 text-sm font-bold mb-2" htmlFor="newPassword">
-                    Senha Provisória
-                </label>
+                <label className="block text-gray-300 text-sm font-bold mb-2">Senha Provisória</label>
                 <input
-                    id="newPassword"
-                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-primary focus:border-brand-primary text-white"
+                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
                     type="password"
-                    placeholder="Uma senha forte"
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
                     required
                 />
-                 <p className="text-xs text-gray-400 mt-2">O funcionário poderá alterar esta senha depois, se necessário.</p>
             </div>
             {error && <p className="text-center text-red-400 text-sm">{error}</p>}
-            <button type="submit" className="w-full bg-brand-primary hover:bg-brand-secondary text-white font-bold py-2 px-4 rounded-md transition duration-300 disabled:bg-gray-600" disabled={isCreatingUser}>
+            <button type="submit" className="w-full bg-brand-primary hover:bg-brand-secondary text-white font-bold py-2 px-4 rounded-md disabled:bg-gray-600" disabled={isCreatingUser}>
                 {isCreatingUser ? 'Criando...' : 'Criar Usuário'}
             </button>
         </form>
       </Modal>
 
-      {/* Remove User Modal */}
-      <Modal 
-        isOpen={!!removeConfirm}
-        onClose={() => setRemoveConfirm(null)}
-        title="Confirmar Remoção"
-      >
+      <Modal isOpen={!!removeConfirm} onClose={() => setRemoveConfirm(null)} title="Confirmar Remoção">
         <div className="mt-4">
-            <p className="text-sm text-gray-400">
-                Tem certeza que deseja remover permanentemente <strong>{removeConfirm?.full_name}</strong>?
-            </p>
-            <p className="text-sm text-red-400 mt-2 font-semibold">
-                Esta ação é irreversível. A conta do usuário (login e senha) e todos os seus dados de presença serão apagados permanentemente. Para acessar o sistema novamente, o usuário precisará criar uma nova conta.
-            </p>
+            <p className="text-sm text-gray-400">Tem certeza que deseja remover permanentemente <strong>{removeConfirm?.full_name}</strong>?</p>
             <div className="mt-6 flex justify-end gap-3">
-                <button onClick={() => setRemoveConfirm(null)} type="button" className="px-4 py-2 text-sm font-medium text-gray-200 bg-gray-600 border border-gray-500 rounded-md shadow-sm hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-white">
-                    Cancelar
-                </button>
-                <button onClick={handleRemoveUser} type="button" className="px-4 py-2 text-sm font-medium text-white bg-status-absent border border-transparent rounded-md shadow-sm hover:bg-red-700 disabled:bg-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-red-500" disabled={loading[removeConfirm?.id || '']}>
-                    {loading[removeConfirm?.id || ''] ? 'Removendo...' : 'Sim, Remover'}
-                </button>
+                <button onClick={() => setRemoveConfirm(null)} className="px-4 py-2 text-sm text-gray-200 bg-gray-600 rounded-md">Cancelar</button>
+                <button onClick={handleRemoveUser} className="px-4 py-2 text-sm text-white bg-status-absent rounded-md shadow-sm hover:bg-red-700">Sim, Remover</button>
             </div>
         </div>
       </Modal>
