@@ -123,7 +123,7 @@ const AuthView: React.FC<AuthViewProps> = ({ companyName }) => {
                             </p>
                             {error.isSchemaError && (
                                 <div className="mt-3 text-[11px] text-amber-500/80 leading-snug">
-                                    <strong>Dica:</strong> Vá ao Painel Supabase > Settings > General > clique em <strong>"Restart Project"</strong> ou execute o SQL de reparo no editor.
+                                    <strong>Dica:</strong> Vá ao Painel Supabase &gt; Settings &gt; General &gt; clique em <strong>"Restart Project"</strong> ou execute o SQL de reparo no editor.
                                 </div>
                             )}
                         </div>
