@@ -13,6 +13,12 @@ const AuthView: React.FC<AuthViewProps> = ({ companyName }) => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<{message: string, isSchemaError?: boolean} | null>(null);
 
+    const clearLocalData = () => {
+        localStorage.clear();
+        sessionStorage.clear();
+        window.location.reload();
+    };
+
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
@@ -30,11 +36,11 @@ const AuthView: React.FC<AuthViewProps> = ({ companyName }) => {
         } catch (err: any) {
             console.error("Auth Error:", err);
             
-            const isSchemaError = err.message?.includes("Database error querying schema") || err.status === 500;
+            const isSchemaError = err.message?.includes("Database error querying schema") || err.status === 500 || err.code === '500';
             
             if (isSchemaError) {
                 setError({
-                    message: "Erro interno no Supabase (Schema Cache). Isso acontece quando o banco de dados está instável ou em manutenção.",
+                    message: "Erro de Sincronização no Banco de Dados (Schema Error).",
                     isSchemaError: true
                 });
             } else if (err.message?.includes("Invalid login credentials")) {
@@ -48,7 +54,7 @@ const AuthView: React.FC<AuthViewProps> = ({ companyName }) => {
     };
 
     return (
-        <div className="min-h-screen bg-[#0a0c10] flex flex-col justify-center items-center p-6 relative overflow-hidden">
+        <div className="min-h-screen bg-[#0a0c10] flex flex-col justify-center items-center p-6 relative overflow-hidden text-slate-100">
             {/* Background Decoration */}
             <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-brand-primary/10 blur-[120px] rounded-full"></div>
             <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-600/10 blur-[120px] rounded-full"></div>
@@ -122,8 +128,16 @@ const AuthView: React.FC<AuthViewProps> = ({ companyName }) => {
                                 {error.message}
                             </p>
                             {error.isSchemaError && (
-                                <div className="mt-3 text-[11px] text-amber-500/80 leading-snug">
-                                    <strong>Dica:</strong> Vá ao Painel Supabase &gt; Settings &gt; General &gt; clique em <strong>"Restart Project"</strong> ou execute o SQL de reparo no editor.
+                                <div className="mt-3 flex flex-col gap-2">
+                                    <div className="text-[11px] text-amber-500/80 leading-snug">
+                                        Isso é um erro temporário no servidor do Supabase. Tente limpar os dados locais abaixo e recarregar a página.
+                                    </div>
+                                    <button 
+                                        onClick={clearLocalData}
+                                        className="text-[10px] bg-amber-500/20 hover:bg-amber-500/30 text-amber-500 py-2 rounded-lg font-bold uppercase tracking-wider transition-colors"
+                                    >
+                                        Limpar Cache & Recarregar
+                                    </button>
                                 </div>
                             )}
                         </div>

@@ -19,14 +19,5 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error("As variáveis de ambiente VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY são obrigatórias.");
 }
 
-// Configuração explícita do banco de dados para evitar erro 500 de "querying schema"
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  db: {
-    schema: 'public'
-  },
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true
-  }
-});
+// Inicialização direta para permitir que o Supabase gerencie os cabeçalhos de recuperação
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
