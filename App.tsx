@@ -25,13 +25,12 @@ function App() {
   const [companyName, setCompanyName] = useState<string>('Arranchou');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const fetchData = useCallback(async (currentSession: Session) => {
+  const fetchData = useCallback(async (currentSession: Session, retryCount = 0) => {
     try {
       setLoading(true);
       setErrorMessage(null);
       
-      // 1. Busca perfil individual do usuário logado
-      // Usamos .maybeSingle() para evitar erro se o RLS bloquear
+      // Busca perfil individual do usuário logado
       const { data: userProfileData, error: profileError } = await supabase
         .from('profiles')
         .select('*')
@@ -39,65 +38,67 @@ function App() {
         .maybeSingle();
 
       if (profileError) {
-          console.error("Erro ao buscar perfil:", profileError);
-          throw new Error("Erro de permissão no banco (RLS). Tente sair e entrar novamente.");
+          if (profileError.message.includes("schema") && retryCount < 2) {
+              // Se for erro de schema, aguarda 1s e tenta de novo
+              setTimeout(() => fetchData(currentSession, retryCount + 1), 1000);
+              return;
+          }
+          throw new Error("Erro de esquema no banco de dados. Execute o SQL de reparo.");
       }
       
+      // Se não achar o perfil e for a primeira tentativa, tenta de novo em 1s (aguardando o trigger)
+      if (!userProfileData && retryCount < 3) {
+          setTimeout(() => fetchData(currentSession, retryCount + 1), 1200);
+          return;
+      }
+
       if (!userProfileData) {
         setProfile(null);
-        return; // Vai cair na tela de "Aguardando Vinculação"
+        setLoading(false);
+        return;
       }
 
       setProfile(userProfileData);
 
-      if (!userProfileData.company_id) {
-          setLoading(false);
-          return;
-      }
+      if (userProfileData.company_id) {
+          // Carrega Nome da Empresa
+          const { data: settingsData } = await supabase
+            .from('company_settings')
+            .select('setting_value')
+            .eq('company_id', userProfileData.company_id)
+            .eq('setting_key', 'company_name')
+            .maybeSingle();
 
-      // 2. Carrega Nome da Empresa
-      const { data: settingsData } = await supabase
-        .from('company_settings')
-        .select('setting_value')
-        .eq('company_id', userProfileData.company_id)
-        .eq('setting_key', 'company_name')
-        .maybeSingle();
+          setCompanyName(settingsData?.setting_value || `Unidade: ${userProfileData.company_id}`);
 
-      setCompanyName(settingsData?.setting_value || `Unidade: ${userProfileData.company_id}`);
+          const isAdmin = userProfileData.role === 'admin' || userProfileData.role === 'super_admin';
 
-      const isAdmin = userProfileData.role === 'admin' || userProfileData.role === 'super_admin';
+          // Busca lista da equipe
+          if (isAdmin) {
+            const { data: allProfiles } = await supabase
+              .from('profiles')
+              .select('*')
+              .order('full_name', { ascending: true });
+            
+            setProfiles(allProfiles || [userProfileData]);
 
-      // 3. Busca lista da equipe
-      if (isAdmin) {
-        const { data: allProfiles, error: fetchProfilesError } = await supabase
-          .from('profiles')
-          .select('*')
-          .order('full_name', { ascending: true });
-        
-        if (fetchProfilesError) {
-            console.error("Erro RLS Perfis Equipe:", fetchProfilesError);
-            // Se falhar a lista total, mostramos apenas o próprio admin para não quebrar o app
-            setProfiles([userProfileData]); 
-        } else {
-            setProfiles(allProfiles || []);
-        }
+            const { data: currentWeekAttendances } = await supabase
+                .from('attendances')
+                .select('*')
+                .eq('week_id', currentWeekId);
 
-        const { data: currentWeekAttendances } = await supabase
-            .from('attendances')
-            .select('*')
-            .eq('week_id', currentWeekId);
+            setAttendanceRecords(currentWeekAttendances || []);
+          } else {
+            setProfiles([userProfileData]);
+            const recentWeeks = getPastWeeksIds(8);
+            const { data: userAttendances } = await supabase
+              .from('attendances')
+              .select('*')
+              .eq('user_id', currentSession.user.id)
+              .in('week_id', recentWeeks);
 
-        setAttendanceRecords(currentWeekAttendances || []);
-      } else {
-        setProfiles([userProfileData]);
-        const recentWeeks = getPastWeeksIds(8);
-        const { data: userAttendances } = await supabase
-          .from('attendances')
-          .select('*')
-          .eq('user_id', currentSession.user.id)
-          .in('week_id', recentWeeks);
-
-        setAttendanceRecords(userAttendances || []);
+            setAttendanceRecords(userAttendances || []);
+          }
       }
 
     } catch (error: any) {
@@ -123,7 +124,7 @@ function App() {
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
-      if (session) {
+      if (session && event === 'SIGNED_IN') {
         fetchData(session);
       } else if (event === 'SIGNED_OUT') {
         setProfile(null);
@@ -137,6 +138,7 @@ function App() {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
+    window.location.reload(); // Força limpeza total para teste
   };
   
   const attendanceData: Attendance = useMemo(() => {
@@ -154,7 +156,7 @@ function App() {
 
   if (isBootstrapping) {
     return (
-      <div className="min-h-screen bg-gray-900 flex justify-center items-center">
+      <div className="min-h-screen bg-[#0a0c10] flex justify-center items-center">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-brand-primary"></div>
       </div>
     );
@@ -166,30 +168,27 @@ function App() {
 
   if (errorMessage) {
     return (
-      <div className="min-h-screen bg-gray-900 flex flex-col justify-center items-center p-6 text-center">
-          <div className="bg-gray-800 border border-red-500/50 p-8 rounded-2xl max-w-md shadow-2xl">
-              <h1 className="text-xl font-bold text-white mb-2">Erro de Acesso</h1>
-              <p className="text-gray-400 mb-6 text-sm">{errorMessage}</p>
+      <div className="min-h-screen bg-[#0a0c10] flex flex-col justify-center items-center p-6 text-center">
+          <div className="bg-slate-900 border border-red-500/30 p-8 rounded-3xl max-w-md shadow-2xl">
+              <h1 className="text-xl font-bold text-white mb-2 uppercase tracking-widest">Erro de Sistema</h1>
+              <p className="text-slate-400 mb-6 text-sm">{errorMessage}</p>
               <div className="flex flex-col gap-3">
-                <button onClick={() => fetchData(session)} className="w-full bg-brand-primary text-white font-bold py-3 rounded-xl">Tentar Novamente</button>
-                <button onClick={handleLogout} className="w-full bg-gray-700 text-white font-bold py-2 rounded-xl">Sair da Conta</button>
+                <button onClick={() => fetchData(session)} className="w-full bg-brand-primary text-white font-bold py-4 rounded-2xl shadow-lg">Tentar Novamente</button>
+                <button onClick={handleLogout} className="w-full bg-slate-800 text-slate-400 font-bold py-3 rounded-2xl">Voltar ao Login</button>
               </div>
           </div>
       </div>
     );
   }
 
-  // Se logou mas o perfil não veio (RLS barrou ou usuário não existe no profiles)
   if (!profile && !loading) {
       return (
-          <div className="min-h-screen bg-gray-900 flex flex-col justify-center items-center p-6 text-center">
-              <div className="bg-gray-800 border border-brand-primary/50 p-8 rounded-2xl max-w-md shadow-xl">
-                  <h1 className="text-xl font-bold text-white mb-4">Sincronizando Acesso</h1>
-                  <p className="text-gray-400 mb-6 text-sm">Estamos finalizando a configuração do seu acesso. Se esta mensagem persistir, clique em Sair e entre novamente.</p>
-                  <div className="flex flex-col gap-3">
-                    <div className="animate-pulse bg-brand-primary/20 h-2 w-full rounded-full mb-4"></div>
-                    <button onClick={handleLogout} className="w-full bg-brand-primary text-white font-bold py-3 rounded-xl shadow-lg">Reiniciar Sessão (Sair)</button>
-                  </div>
+          <div className="min-h-screen bg-[#0a0c10] flex flex-col justify-center items-center p-6 text-center">
+              <div className="bg-slate-900 border border-brand-primary/30 p-8 rounded-3xl max-w-md shadow-2xl">
+                  <div className="w-12 h-12 border-4 border-brand-primary/20 border-t-brand-primary rounded-full animate-spin mx-auto mb-6"></div>
+                  <h1 className="text-xl font-bold text-white mb-2 uppercase tracking-widest">Sincronizando...</h1>
+                  <p className="text-slate-400 mb-6 text-sm">O sistema está preparando seu ambiente de trabalho. Aguarde um instante.</p>
+                  <button onClick={handleLogout} className="w-full bg-slate-800 text-slate-500 font-bold py-3 rounded-2xl text-xs uppercase tracking-widest">Cancelar e Sair</button>
               </div>
           </div>
       );
@@ -197,11 +196,11 @@ function App() {
 
   if (profile && !profile.company_id) {
       return (
-          <div className="min-h-screen bg-gray-900 flex flex-col justify-center items-center p-6 text-center">
-              <div className="bg-gray-800 border border-yellow-500/50 p-8 rounded-2xl max-w-md shadow-xl">
-                  <h1 className="text-xl font-bold text-white mb-4">Aguardando Vinculação</h1>
-                  <p className="text-gray-400 mb-6 text-sm">Sua conta foi criada, mas não está vinculada a nenhuma unidade de serviço.</p>
-                  <button onClick={handleLogout} className="w-full bg-red-600 text-white font-bold py-3 rounded-xl">Sair</button>
+          <div className="min-h-screen bg-[#0a0c10] flex flex-col justify-center items-center p-6 text-center">
+              <div className="bg-slate-900 border border-amber-500/30 p-8 rounded-3xl max-w-md shadow-2xl">
+                  <h1 className="text-xl font-bold text-white mb-4 uppercase tracking-widest">Acesso Restrito</h1>
+                  <p className="text-slate-400 mb-6 text-sm leading-relaxed">Sua conta foi criada com sucesso, mas você ainda não está vinculado a uma unidade física.</p>
+                  <button onClick={handleLogout} className="w-full bg-amber-600 text-white font-bold py-4 rounded-2xl shadow-lg">Sair do Aplicativo</button>
               </div>
           </div>
       );
@@ -213,42 +212,45 @@ function App() {
   const isSuperAdmin = profile.role === 'super_admin';
 
   return (
-    <div className="container mx-auto px-2 sm:px-4 py-4 sm:py-8 max-w-7xl">
+    <div className="container mx-auto px-2 sm:px-4 py-4 sm:py-8 max-w-7xl animate-in fade-in duration-700">
       <Header session={session} profile={profile} onLogout={handleLogout} companyName={companyName} />
       <main>
         {loading && (
-           <div className="fixed top-4 right-4 z-50">
+           <div className="fixed top-6 right-6 z-50">
               <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-brand-primary"></div>
            </div>
         )}
         {isAdmin ? (
           <>
-            <nav className="mb-8 flex justify-around sm:justify-center border-b border-gray-700">
-              <button onClick={() => setView('current')} className={`px-4 py-3 font-bold transition-all ${view === 'current' ? 'text-brand-primary border-b-4 border-brand-primary' : 'text-gray-500 hover:text-gray-300'}`}>
-                <span className="flex items-center gap-2"><CalendarIcon /> <span className="hidden sm:inline uppercase text-sm tracking-widest">Painel</span></span>
+            <nav className="mb-10 flex justify-around sm:justify-center border-b border-slate-800/60">
+              <button onClick={() => setView('current')} className={`px-6 py-4 font-bold transition-all relative ${view === 'current' ? 'text-brand-primary' : 'text-slate-500 hover:text-slate-300'}`}>
+                <span className="flex items-center gap-2"><CalendarIcon /> <span className="hidden sm:inline uppercase text-[11px] tracking-[0.2em]">Painel</span></span>
+                {view === 'current' && <div className="absolute bottom-0 left-0 w-full h-1 bg-brand-primary rounded-t-full shadow-[0_-4px_10px_rgba(13,71,161,0.5)]"></div>}
               </button>
-              <button onClick={() => setView('history')} className={`px-4 py-3 font-bold transition-all ${view === 'history' ? 'text-brand-primary border-b-4 border-brand-primary' : 'text-gray-500 hover:text-gray-300'}`}>
-                 <span className="flex items-center gap-2"><HistoryIcon /> <span className="hidden sm:inline uppercase text-sm tracking-widest">Relatórios</span></span>
+              <button onClick={() => setView('history')} className={`px-6 py-4 font-bold transition-all relative ${view === 'history' ? 'text-brand-primary' : 'text-slate-500 hover:text-slate-300'}`}>
+                 <span className="flex items-center gap-2"><HistoryIcon /> <span className="hidden sm:inline uppercase text-[11px] tracking-[0.2em]">Relatórios</span></span>
+                 {view === 'history' && <div className="absolute bottom-0 left-0 w-full h-1 bg-brand-primary rounded-t-full shadow-[0_-4px_10px_rgba(13,71,161,0.5)]"></div>}
               </button>
-              <button onClick={() => setView('manage_users')} className={`px-4 py-3 font-bold transition-all ${view === 'manage_users' ? 'text-brand-primary border-b-4 border-brand-primary' : 'text-gray-500 hover:text-gray-300'}`}>
-                 <span className="flex items-center gap-2"><UsersIcon /> <span className="hidden sm:inline uppercase text-sm tracking-widest">Equipe</span></span>
+              <button onClick={() => setView('manage_users')} className={`px-6 py-4 font-bold transition-all relative ${view === 'manage_users' ? 'text-brand-primary' : 'text-slate-500 hover:text-slate-300'}`}>
+                 <span className="flex items-center gap-2"><UsersIcon /> <span className="hidden sm:inline uppercase text-[11px] tracking-[0.2em]">Equipe</span></span>
+                 {view === 'manage_users' && <div className="absolute bottom-0 left-0 w-full h-1 bg-brand-primary rounded-t-full shadow-[0_-4px_10px_rgba(13,71,161,0.5)]"></div>}
               </button>
               {isSuperAdmin && (
-                 <button onClick={() => setView('settings')} className={`px-4 py-3 font-bold transition-all ${view === 'settings' ? 'text-brand-primary border-b-4 border-brand-primary' : 'text-gray-500 hover:text-gray-300'}`}>
-                    <span className="flex items-center gap-2"><SettingsIcon /> <span className="hidden sm:inline uppercase text-sm tracking-widest">Ajustes</span></span>
+                 <button onClick={() => setView('settings')} className={`px-6 py-4 font-bold transition-all relative ${view === 'settings' ? 'text-brand-primary' : 'text-slate-500 hover:text-slate-300'}`}>
+                    <span className="flex items-center gap-2"><SettingsIcon /> <span className="hidden sm:inline uppercase text-[11px] tracking-[0.2em]">Ajustes</span></span>
+                    {view === 'settings' && <div className="absolute bottom-0 left-0 w-full h-1 bg-brand-primary rounded-t-full shadow-[0_-4px_10px_rgba(13,71,161,0.5)]"></div>}
                 </button>
               )}
             </nav>
             
-            <div className="transition-all duration-300 animate-in fade-in slide-in-from-bottom-2">
+            <div className="transition-all duration-300">
               {profiles.length <= 1 && !loading && (
-                  <div className="bg-brand-primary/10 border border-brand-primary/40 p-6 rounded-xl text-center mb-8">
-                      <p className="text-brand-light font-bold mb-2">Sincronização Necessária</p>
-                      <p className="text-gray-400 text-sm max-w-sm mx-auto">
-                          As regras de segurança do banco de dados foram atualizadas. 
-                          Para visualizar sua equipe, você precisa <strong>Sair e Entrar novamente</strong> agora.
+                  <div className="bg-brand-primary/5 border border-brand-primary/20 p-8 rounded-[2rem] text-center mb-10 backdrop-blur-sm">
+                      <p className="text-brand-light font-black uppercase tracking-[0.2em] text-xs mb-3">Sincronização Necessária</p>
+                      <p className="text-slate-400 text-sm max-w-sm mx-auto leading-relaxed">
+                          As regras de segurança foram atualizadas. Para visualizar sua equipe e os dados da unidade, reinicie sua sessão.
                       </p>
-                      <button onClick={handleLogout} className="mt-4 bg-brand-primary px-8 py-2 rounded-lg font-bold shadow-lg hover:bg-brand-secondary transition-all">Sair e Entrar Agora</button>
+                      <button onClick={handleLogout} className="mt-6 bg-brand-primary px-10 py-3 rounded-2xl font-bold shadow-xl hover:bg-brand-secondary transition-all active:scale-95">Reiniciar Sessão Agora</button>
                   </div>
               )}
               {view === 'current' && (
@@ -280,7 +282,7 @@ function App() {
             </div>
           </>
         ) : (
-          <div className="animate-in zoom-in-95 duration-300">
+          <div className="animate-in zoom-in-95 duration-500">
             <EmployeeWeekView
               profile={profile}
               attendance={attendanceData}
