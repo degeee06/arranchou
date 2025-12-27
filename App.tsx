@@ -37,16 +37,33 @@ function App() {
         .maybeSingle();
 
       if (profileError) {
-          // Se for erro de esquema, tenta novamente com delay
-          if (profileError.message?.includes("schema") && retryCount < 3) {
-              setTimeout(() => fetchData(currentSession, retryCount + 1), 1500);
+          if (profileError.message?.includes("schema") && retryCount < 5) {
+              setTimeout(() => fetchData(currentSession, retryCount + 1), 2000);
               return;
           }
-          throw new Error("Erro de conexão com o banco de dados. Execute o reparo via SQL.");
+          throw new Error("Erro de conexão com o banco. Tente novamente.");
       }
       
-      if (!userProfileData) {
-        // Fallback: Tenta buscar de novo se o usuário acabou de ser criado
+      let finalProfile = userProfileData;
+
+      // RECURSO DE EMERGÊNCIA: Se não achar no profile mas estiver no Auth (Metadata)
+      if (!finalProfile) {
+        const userMetadata = currentSession.user.user_metadata;
+        const appMetadata = currentSession.user.app_metadata;
+        
+        if (userMetadata?.full_name && appMetadata?.role) {
+            console.log("Recuperando perfil via metadados do JWT...");
+            finalProfile = {
+                id: currentSession.user.id,
+                full_name: userMetadata.full_name,
+                employee_id: userMetadata.employee_id || '0000',
+                role: appMetadata.role as any,
+                company_id: appMetadata.company_id || 'ALFA'
+            };
+        }
+      }
+
+      if (!finalProfile) {
         if (retryCount < 5) {
             setTimeout(() => fetchData(currentSession, retryCount + 1), 2000);
             return;
@@ -56,36 +73,38 @@ function App() {
         return;
       }
 
-      setProfile(userProfileData);
+      setProfile(finalProfile);
 
-      if (userProfileData.company_id) {
+      if (finalProfile.company_id) {
           const { data: settingsData } = await supabase
             .from('company_settings')
             .select('setting_value')
-            .eq('company_id', userProfileData.company_id)
+            .eq('company_id', finalProfile.company_id)
             .eq('setting_key', 'company_name')
             .maybeSingle();
 
-          setCompanyName(settingsData?.setting_value || `Unidade: ${userProfileData.company_id}`);
+          setCompanyName(settingsData?.setting_value || `Unidade ${finalProfile.company_id}`);
 
-          const isAdmin = userProfileData.role === 'admin' || userProfileData.role === 'super_admin';
+          const isAdmin = finalProfile.role === 'admin' || finalProfile.role === 'super_admin';
 
           if (isAdmin) {
             const { data: allProfiles } = await supabase
               .from('profiles')
               .select('*')
+              .eq('company_id', finalProfile.company_id)
               .order('full_name', { ascending: true });
             
-            setProfiles(allProfiles || [userProfileData]);
+            setProfiles(allProfiles || [finalProfile]);
 
             const { data: currentWeekAttendances } = await supabase
                 .from('attendances')
                 .select('*')
-                .eq('week_id', currentWeekId);
+                .eq('week_id', currentWeekId)
+                .eq('company_id', finalProfile.company_id);
 
             setAttendanceRecords(currentWeekAttendances || []);
           } else {
-            setProfiles([userProfileData]);
+            setProfiles([finalProfile]);
             const recentWeeks = getPastWeeksIds(8);
             const { data: userAttendances } = await supabase
               .from('attendances')
@@ -99,7 +118,7 @@ function App() {
 
     } catch (error: any) {
       console.error('Fetch Error:', error);
-      setErrorMessage(error.message || 'Erro de conexão.');
+      setErrorMessage(error.message || 'Erro de sincronização.');
     } finally {
       setLoading(false);
     }
@@ -154,7 +173,7 @@ function App() {
   if (isBootstrapping) {
     return (
       <div className="min-h-screen bg-[#0a0c10] flex justify-center items-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-brand-primary"></div>
+        <div className="w-10 h-10 border-4 border-brand-primary/20 border-t-brand-primary rounded-full animate-spin"></div>
       </div>
     );
   }
@@ -167,8 +186,8 @@ function App() {
     return (
       <div className="min-h-screen bg-[#0a0c10] flex flex-col justify-center items-center p-6 text-center">
           <div className="bg-slate-900 border border-red-500/30 p-8 rounded-3xl max-w-md shadow-2xl">
-              <h1 className="text-xl font-bold text-white mb-2 uppercase tracking-widest">Falha Técnica</h1>
-              <p className="text-slate-400 mb-6 text-sm leading-relaxed">{errorMessage}</p>
+              <h1 className="text-xl font-bold text-white mb-2 uppercase tracking-widest">Erro de Conexão</h1>
+              <p className="text-slate-400 mb-6 text-xs leading-relaxed">{errorMessage}</p>
               <div className="flex flex-col gap-3">
                 <button onClick={() => fetchData(session)} className="w-full bg-brand-primary text-white font-bold py-4 rounded-2xl shadow-lg">Tentar Novamente</button>
                 <button onClick={handleLogout} className="w-full bg-slate-800 text-slate-400 font-bold py-3 rounded-2xl">Sair</button>
@@ -184,8 +203,8 @@ function App() {
               <div className="bg-slate-900 border border-brand-primary/30 p-8 rounded-3xl max-w-md shadow-2xl">
                   <div className="w-12 h-12 border-4 border-brand-primary/20 border-t-brand-primary rounded-full animate-spin mx-auto mb-6"></div>
                   <h1 className="text-xl font-bold text-white mb-2 uppercase tracking-widest">Sincronizando...</h1>
-                  <p className="text-slate-400 mb-6 text-sm">O banco de dados está processando seu acesso. Aguarde.</p>
-                  <button onClick={handleLogout} className="w-full bg-slate-800 text-slate-500 font-bold py-3 rounded-2xl text-[10px] uppercase tracking-widest">Cancelar e Sair</button>
+                  <p className="text-slate-400 mb-6 text-xs">Seu perfil está sendo carregado. Se demorar mais de 30 segundos, recarregue a página.</p>
+                  <button onClick={handleLogout} className="w-full bg-slate-800 text-slate-500 font-bold py-3 rounded-2xl text-[10px] uppercase tracking-widest">Sair</button>
               </div>
           </div>
       );
@@ -195,8 +214,8 @@ function App() {
       return (
           <div className="min-h-screen bg-[#0a0c10] flex flex-col justify-center items-center p-6 text-center">
               <div className="bg-slate-900 border border-amber-500/30 p-8 rounded-3xl max-w-md shadow-2xl">
-                  <h1 className="text-xl font-bold text-white mb-4 uppercase tracking-widest">Aguardando Unidade</h1>
-                  <p className="text-slate-400 mb-6 text-sm leading-relaxed">Conta ativa, mas não vinculada a uma unidade.</p>
+                  <h1 className="text-xl font-bold text-white mb-4 uppercase tracking-widest">Unidade Não Definida</h1>
+                  <p className="text-slate-400 mb-6 text-sm leading-relaxed">Sua conta não possui uma unidade vinculada.</p>
                   <button onClick={handleLogout} className="w-full bg-amber-600 text-white font-bold py-4 rounded-2xl shadow-lg">Sair</button>
               </div>
           </div>
@@ -241,16 +260,6 @@ function App() {
             </nav>
             
             <div className="transition-all duration-300">
-              {profiles.length <= 1 && !loading && (
-                  <div className="bg-brand-primary/5 border border-brand-primary/20 p-8 rounded-[2rem] text-center mb-10 backdrop-blur-sm">
-                      <p className="text-brand-light font-black uppercase tracking-[0.2em] text-xs mb-3">Sincronização Necessária</p>
-                      <p className="text-slate-400 text-sm max-w-sm mx-auto leading-relaxed">
-                          As regras do banco foram atualizadas para suportar multi-unidades. 
-                          Se os dados não carregarem, limpe o cache e entre novamente.
-                      </p>
-                      <button onClick={() => fetchData(session)} className="mt-6 bg-brand-primary px-10 py-3 rounded-2xl font-bold shadow-xl hover:bg-brand-secondary transition-all active:scale-95">Recarregar Agora</button>
-                  </div>
-              )}
               {view === 'current' && (
                 <CurrentWeekView
                   profiles={profiles}
