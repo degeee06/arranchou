@@ -30,7 +30,6 @@ function App() {
       setLoading(true);
       setErrorMessage(null);
       
-      // Busca perfil individual do usuário logado
       const { data: userProfileData, error: profileError } = await supabase
         .from('profiles')
         .select('*')
@@ -38,21 +37,20 @@ function App() {
         .maybeSingle();
 
       if (profileError) {
-          if (profileError.message.includes("schema") && retryCount < 2) {
-              // Se for erro de schema, aguarda 1s e tenta de novo
-              setTimeout(() => fetchData(currentSession, retryCount + 1), 1000);
+          // Se for erro de esquema, tenta novamente com delay
+          if (profileError.message?.includes("schema") && retryCount < 3) {
+              setTimeout(() => fetchData(currentSession, retryCount + 1), 1500);
               return;
           }
-          throw new Error("Erro de esquema no banco de dados. Execute o SQL de reparo.");
+          throw new Error("Erro de conexão com o banco de dados. Execute o reparo via SQL.");
       }
       
-      // Se não achar o perfil e for a primeira tentativa, tenta de novo em 1s (aguardando o trigger)
-      if (!userProfileData && retryCount < 3) {
-          setTimeout(() => fetchData(currentSession, retryCount + 1), 1200);
-          return;
-      }
-
       if (!userProfileData) {
+        // Fallback: Tenta buscar de novo se o usuário acabou de ser criado
+        if (retryCount < 5) {
+            setTimeout(() => fetchData(currentSession, retryCount + 1), 2000);
+            return;
+        }
         setProfile(null);
         setLoading(false);
         return;
@@ -61,7 +59,6 @@ function App() {
       setProfile(userProfileData);
 
       if (userProfileData.company_id) {
-          // Carrega Nome da Empresa
           const { data: settingsData } = await supabase
             .from('company_settings')
             .select('setting_value')
@@ -73,7 +70,6 @@ function App() {
 
           const isAdmin = userProfileData.role === 'admin' || userProfileData.role === 'super_admin';
 
-          // Busca lista da equipe
           if (isAdmin) {
             const { data: allProfiles } = await supabase
               .from('profiles')
@@ -103,7 +99,7 @@ function App() {
 
     } catch (error: any) {
       console.error('Fetch Error:', error);
-      setErrorMessage(error.message || 'Erro de conexão com o servidor.');
+      setErrorMessage(error.message || 'Erro de conexão.');
     } finally {
       setLoading(false);
     }
@@ -138,7 +134,8 @@ function App() {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    window.location.reload(); // Força limpeza total para teste
+    localStorage.clear();
+    window.location.reload();
   };
   
   const attendanceData: Attendance = useMemo(() => {
@@ -170,11 +167,11 @@ function App() {
     return (
       <div className="min-h-screen bg-[#0a0c10] flex flex-col justify-center items-center p-6 text-center">
           <div className="bg-slate-900 border border-red-500/30 p-8 rounded-3xl max-w-md shadow-2xl">
-              <h1 className="text-xl font-bold text-white mb-2 uppercase tracking-widest">Erro de Sistema</h1>
-              <p className="text-slate-400 mb-6 text-sm">{errorMessage}</p>
+              <h1 className="text-xl font-bold text-white mb-2 uppercase tracking-widest">Falha Técnica</h1>
+              <p className="text-slate-400 mb-6 text-sm leading-relaxed">{errorMessage}</p>
               <div className="flex flex-col gap-3">
                 <button onClick={() => fetchData(session)} className="w-full bg-brand-primary text-white font-bold py-4 rounded-2xl shadow-lg">Tentar Novamente</button>
-                <button onClick={handleLogout} className="w-full bg-slate-800 text-slate-400 font-bold py-3 rounded-2xl">Voltar ao Login</button>
+                <button onClick={handleLogout} className="w-full bg-slate-800 text-slate-400 font-bold py-3 rounded-2xl">Sair</button>
               </div>
           </div>
       </div>
@@ -187,8 +184,8 @@ function App() {
               <div className="bg-slate-900 border border-brand-primary/30 p-8 rounded-3xl max-w-md shadow-2xl">
                   <div className="w-12 h-12 border-4 border-brand-primary/20 border-t-brand-primary rounded-full animate-spin mx-auto mb-6"></div>
                   <h1 className="text-xl font-bold text-white mb-2 uppercase tracking-widest">Sincronizando...</h1>
-                  <p className="text-slate-400 mb-6 text-sm">O sistema está preparando seu ambiente de trabalho. Aguarde um instante.</p>
-                  <button onClick={handleLogout} className="w-full bg-slate-800 text-slate-500 font-bold py-3 rounded-2xl text-xs uppercase tracking-widest">Cancelar e Sair</button>
+                  <p className="text-slate-400 mb-6 text-sm">O banco de dados está processando seu acesso. Aguarde.</p>
+                  <button onClick={handleLogout} className="w-full bg-slate-800 text-slate-500 font-bold py-3 rounded-2xl text-[10px] uppercase tracking-widest">Cancelar e Sair</button>
               </div>
           </div>
       );
@@ -198,9 +195,9 @@ function App() {
       return (
           <div className="min-h-screen bg-[#0a0c10] flex flex-col justify-center items-center p-6 text-center">
               <div className="bg-slate-900 border border-amber-500/30 p-8 rounded-3xl max-w-md shadow-2xl">
-                  <h1 className="text-xl font-bold text-white mb-4 uppercase tracking-widest">Acesso Restrito</h1>
-                  <p className="text-slate-400 mb-6 text-sm leading-relaxed">Sua conta foi criada com sucesso, mas você ainda não está vinculado a uma unidade física.</p>
-                  <button onClick={handleLogout} className="w-full bg-amber-600 text-white font-bold py-4 rounded-2xl shadow-lg">Sair do Aplicativo</button>
+                  <h1 className="text-xl font-bold text-white mb-4 uppercase tracking-widest">Aguardando Unidade</h1>
+                  <p className="text-slate-400 mb-6 text-sm leading-relaxed">Conta ativa, mas não vinculada a uma unidade.</p>
+                  <button onClick={handleLogout} className="w-full bg-amber-600 text-white font-bold py-4 rounded-2xl shadow-lg">Sair</button>
               </div>
           </div>
       );
@@ -248,9 +245,10 @@ function App() {
                   <div className="bg-brand-primary/5 border border-brand-primary/20 p-8 rounded-[2rem] text-center mb-10 backdrop-blur-sm">
                       <p className="text-brand-light font-black uppercase tracking-[0.2em] text-xs mb-3">Sincronização Necessária</p>
                       <p className="text-slate-400 text-sm max-w-sm mx-auto leading-relaxed">
-                          As regras de segurança foram atualizadas. Para visualizar sua equipe e os dados da unidade, reinicie sua sessão.
+                          As regras do banco foram atualizadas para suportar multi-unidades. 
+                          Se os dados não carregarem, limpe o cache e entre novamente.
                       </p>
-                      <button onClick={handleLogout} className="mt-6 bg-brand-primary px-10 py-3 rounded-2xl font-bold shadow-xl hover:bg-brand-secondary transition-all active:scale-95">Reiniciar Sessão Agora</button>
+                      <button onClick={() => fetchData(session)} className="mt-6 bg-brand-primary px-10 py-3 rounded-2xl font-bold shadow-xl hover:bg-brand-secondary transition-all active:scale-95">Recarregar Agora</button>
                   </div>
               )}
               {view === 'current' && (

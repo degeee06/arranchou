@@ -36,17 +36,22 @@ const AuthView: React.FC<AuthViewProps> = ({ companyName }) => {
         } catch (err: any) {
             console.error("Auth Error:", err);
             
-            const isSchemaError = err.message?.includes("Database error querying schema") || err.status === 500 || err.code === '500';
+            // Detecta especificamente o erro de schema (500) do Supabase
+            const isSchemaError = 
+                err.message?.includes("querying schema") || 
+                err.status === 500 || 
+                err.code === '500' ||
+                err.message?.includes("Database error");
             
             if (isSchemaError) {
                 setError({
-                    message: "Erro de Sincronização no Banco de Dados (Schema Error).",
+                    message: "Erro interno no servidor do Supabase (Schema Error).",
                     isSchemaError: true
                 });
             } else if (err.message?.includes("Invalid login credentials")) {
-                setError({ message: "Credenciais inválidas. Verifique código, matrícula e senha." });
+                setError({ message: "Dados inválidos. Verifique unidade, matrícula e senha." });
             } else {
-                setError({ message: err.message || "Erro inesperado. Tente novamente." });
+                setError({ message: err.message || "Erro ao conectar. Verifique sua internet." });
             }
         } finally {
             setLoading(false);
@@ -67,7 +72,7 @@ const AuthView: React.FC<AuthViewProps> = ({ companyName }) => {
                         </svg>
                     </div>
                     <h1 className="text-4xl font-black text-white tracking-tight mb-2">Arranchou</h1>
-                    <p className="text-slate-400 font-medium tracking-wide">SISTEMA DE GESTÃO DE REFEIÇÕES</p>
+                    <p className="text-slate-400 font-medium tracking-wide uppercase tracking-[0.2em] text-[10px]">Portal de Acesso Multi-Unidade</p>
                 </div>
 
                 <div className="bg-slate-900/40 backdrop-blur-xl border border-slate-800 p-8 rounded-[2.5rem] shadow-2xl">
@@ -77,7 +82,7 @@ const AuthView: React.FC<AuthViewProps> = ({ companyName }) => {
                             <input
                                 className="w-full px-5 py-4 bg-slate-950/50 border border-slate-800 rounded-2xl text-white font-bold placeholder-slate-600 focus:ring-2 focus:ring-brand-primary/50 focus:border-brand-primary transition-all outline-none uppercase"
                                 type="text"
-                                placeholder="EX: DORES"
+                                placeholder="EX: BRAVO"
                                 value={companyCode}
                                 onChange={(e) => setCompanyCode(e.target.value)}
                                 required
@@ -85,11 +90,11 @@ const AuthView: React.FC<AuthViewProps> = ({ companyName }) => {
                         </div>
 
                         <div className="space-y-1.5">
-                            <label className="text-[11px] font-bold text-slate-500 uppercase tracking-[0.15em] ml-1">Matrícula</label>
+                            <label className="text-[11px] font-bold text-slate-500 uppercase tracking-[0.15em] ml-1">Nº Matrícula</label>
                             <input
                                 className="w-full px-5 py-4 bg-slate-950/50 border border-slate-800 rounded-2xl text-white font-medium placeholder-slate-600 focus:ring-2 focus:ring-brand-primary/50 focus:border-brand-primary transition-all outline-none"
                                 type="text"
-                                placeholder="0000"
+                                placeholder="5000"
                                 value={employeeId}
                                 onChange={(e) => setEmployeeId(e.target.value)}
                                 required
@@ -116,7 +121,7 @@ const AuthView: React.FC<AuthViewProps> = ({ companyName }) => {
                             {loading ? (
                                 <div className="flex items-center justify-center gap-2">
                                     <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin"></div>
-                                    <span>Verificando...</span>
+                                    <span>Autenticando...</span>
                                 </div>
                             ) : 'Entrar no Sistema'}
                         </button>
@@ -124,14 +129,14 @@ const AuthView: React.FC<AuthViewProps> = ({ companyName }) => {
 
                     {error && (
                         <div className={`mt-6 p-4 rounded-2xl border ${error.isSchemaError ? 'bg-amber-950/20 border-amber-500/30' : 'bg-red-950/20 border-red-500/30'} animate-in slide-in-from-top-2 duration-300`}>
-                            <p className={`text-sm font-medium ${error.isSchemaError ? 'text-amber-400' : 'text-red-400'} leading-relaxed`}>
+                            <p className={`text-sm font-bold ${error.isSchemaError ? 'text-amber-400' : 'text-red-400'} leading-relaxed mb-1`}>
                                 {error.message}
                             </p>
                             {error.isSchemaError && (
-                                <div className="mt-3 flex flex-col gap-2">
-                                    <div className="text-[11px] text-amber-500/80 leading-snug">
-                                        Isso é um erro temporário no servidor do Supabase. Tente limpar os dados locais abaixo e recarregar a página.
-                                    </div>
+                                <div className="mt-2 flex flex-col gap-3">
+                                    <p className="text-[10px] text-amber-500/70 leading-relaxed italic">
+                                        Isso é um problema temporário no banco de dados. Tente limpar o cache abaixo.
+                                    </p>
                                     <button 
                                         onClick={clearLocalData}
                                         className="text-[10px] bg-amber-500/20 hover:bg-amber-500/30 text-amber-500 py-2 rounded-lg font-bold uppercase tracking-wider transition-colors"
@@ -146,7 +151,7 @@ const AuthView: React.FC<AuthViewProps> = ({ companyName }) => {
 
                 <div className="mt-10 text-center space-y-1">
                     <p className="text-slate-600 text-sm">Problemas com o acesso?</p>
-                    <p className="text-slate-400 text-sm font-bold hover:text-white cursor-pointer transition-colors uppercase tracking-widest text-[10px]">Contatar Administrador</p>
+                    <p className="text-slate-400 text-sm font-bold hover:text-white cursor-pointer transition-colors uppercase tracking-widest text-[10px]">Suporte Técnico</p>
                 </div>
             </div>
         </div>
