@@ -31,8 +31,7 @@ function App() {
       setErrorMessage(null);
       
       // 1. Busca perfil individual do usuário logado
-      // Usamos .maybeSingle() para evitar erro se o RLS bloquear
-      const { data: userProfileData, error: profileError } = await supabase
+      let { data: userProfileData, error: profileError } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', currentSession.user.id)
@@ -40,12 +39,40 @@ function App() {
 
       if (profileError) {
           console.error("Erro ao buscar perfil:", profileError);
-          throw new Error("Erro de permissão no banco (RLS). Tente sair e entrar novamente.");
+          throw new Error("Erro de permissão no banco. Tente sair e entrar novamente.");
       }
       
+      // LOGICA DE AUTO-RECUPERAÇÃO (Self-Healing)
+      // Se não tem perfil na tabela public, tenta criar usando metadados do Auth
+      if (!userProfileData) {
+        const metadata = currentSession.user.app_metadata;
+        const userMetadata = currentSession.user.user_metadata;
+        
+        if (metadata?.company_id && metadata?.role) {
+            const newProfile = {
+                id: currentSession.user.id,
+                full_name: userMetadata?.full_name || 'Usuário',
+                employee_id: userMetadata?.employee_id || '0',
+                role: metadata.role,
+                company_id: metadata.company_id
+            };
+
+            const { data: createdProfile, error: insertError } = await supabase
+                .from('profiles')
+                .insert(newProfile)
+                .select()
+                .single();
+
+            if (!insertError && createdProfile) {
+                userProfileData = createdProfile;
+            }
+        }
+      }
+
       if (!userProfileData) {
         setProfile(null);
-        return; // Vai cair na tela de "Aguardando Vinculação"
+        setLoading(false);
+        return;
       }
 
       setProfile(userProfileData);
@@ -67,16 +94,16 @@ function App() {
 
       const isAdmin = userProfileData.role === 'admin' || userProfileData.role === 'super_admin';
 
-      // 3. Busca lista da equipe
+      // 3. Busca lista da equipe filtrada por empresa
       if (isAdmin) {
         const { data: allProfiles, error: fetchProfilesError } = await supabase
           .from('profiles')
           .select('*')
+          .eq('company_id', userProfileData.company_id)
           .order('full_name', { ascending: true });
         
         if (fetchProfilesError) {
             console.error("Erro RLS Perfis Equipe:", fetchProfilesError);
-            // Se falhar a lista total, mostramos apenas o próprio admin para não quebrar o app
             setProfiles([userProfileData]); 
         } else {
             setProfiles(allProfiles || []);
@@ -85,7 +112,8 @@ function App() {
         const { data: currentWeekAttendances } = await supabase
             .from('attendances')
             .select('*')
-            .eq('week_id', currentWeekId);
+            .eq('week_id', currentWeekId)
+            .eq('company_id', userProfileData.company_id);
 
         setAttendanceRecords(currentWeekAttendances || []);
       } else {
@@ -179,7 +207,6 @@ function App() {
     );
   }
 
-  // Se logou mas o perfil não veio (RLS barrou ou usuário não existe no profiles)
   if (!profile && !loading) {
       return (
           <div className="min-h-screen bg-gray-900 flex flex-col justify-center items-center p-6 text-center">
@@ -188,7 +215,7 @@ function App() {
                   <p className="text-gray-400 mb-6 text-sm">Estamos finalizando a configuração do seu acesso. Se esta mensagem persistir, clique em Sair e entre novamente.</p>
                   <div className="flex flex-col gap-3">
                     <div className="animate-pulse bg-brand-primary/20 h-2 w-full rounded-full mb-4"></div>
-                    <button onClick={handleLogout} className="w-full bg-brand-primary text-white font-bold py-3 rounded-xl shadow-lg">Reiniciar Sessão (Sair)</button>
+                    <button onClick={handleLogout} className="w-full bg-brand-primary text-white font-bold py-3 rounded-xl shadow-lg">Sair</button>
                   </div>
               </div>
           </div>
@@ -241,16 +268,6 @@ function App() {
             </nav>
             
             <div className="transition-all duration-300 animate-in fade-in slide-in-from-bottom-2">
-              {profiles.length <= 1 && !loading && (
-                  <div className="bg-brand-primary/10 border border-brand-primary/40 p-6 rounded-xl text-center mb-8">
-                      <p className="text-brand-light font-bold mb-2">Sincronização Necessária</p>
-                      <p className="text-gray-400 text-sm max-w-sm mx-auto">
-                          As regras de segurança do banco de dados foram atualizadas. 
-                          Para visualizar sua equipe, você precisa <strong>Sair e Entrar novamente</strong> agora.
-                      </p>
-                      <button onClick={handleLogout} className="mt-4 bg-brand-primary px-8 py-2 rounded-lg font-bold shadow-lg hover:bg-brand-secondary transition-all">Sair e Entrar Agora</button>
-                  </div>
-              )}
               {view === 'current' && (
                 <CurrentWeekView
                   profiles={profiles}
